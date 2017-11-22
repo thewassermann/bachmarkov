@@ -1,0 +1,2 @@
+def markov():
+	print("Hello")
