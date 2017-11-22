@@ -89,8 +89,3 @@ def degrees_on_beats(chorale):
         rn_outstream.append(bc)
     
     return rn_outstream
-
-
-
-
-    
