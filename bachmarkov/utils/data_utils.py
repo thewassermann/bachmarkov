@@ -5,36 +5,30 @@ Utility functions to do with reading/writing/splitting data
 from music21 import *
 import os
 import pickle
+from tqdm import trange
+import numpy as np
+import sys
 
 """
 These functions are for the reading/writing/cleaning of chorales
 """
 
-def partbool(string):
+def partbool(chorales, string):
 	"""
 	Helper function to ensure that the chorales have the
 	correct number and type of parts. Returns False if not
 	"""
-    prts = chorales[string].parts
-    if ((prts[0].partName == 'Soprano') &
-        (prts[1].partName == 'Alto') &
-        (prts[2].partName == 'Tenor') &
-        (prts[3].partName == 'Bass')):
-        return True
-    else:
-        return False
+	prts = chorales[string].parts
+	if ((prts[0].partName == 'Soprano') &
+		(prts[1].partName == 'Alto') &
+		(prts[2].partName == 'Tenor') &
+		(prts[3].partName == 'Bass')):
+		return True
+	else:
+		return False
 
 
 def load_clean_chorales():
-	"""
-	Function to read the clean chorales from memory
-	"""
-	return chorales = {
-		'Major' : read_pickle('Major Chorales'),
-		'Minor' : read_pickle('Minor Chorales')
-	}
-
-def save_clean_chorales():
 	"""
 	Function to clean the chorales in the music21 database and save major
 	and minor list of musicxml files
@@ -54,12 +48,12 @@ def save_clean_chorales():
 	        chorales[str(c.corpusFilepath)[5:-4]] = c
 
 	fourpart = [c for c in chorales if len(chorales[c].parts) == 4]
-	satb = [fp for fp in fourpart if partbool(fp)]
+	satb = [fp for fp in fourpart if partbool(chorales, fp)]
 
 	satb_major = []
 	satb_minor = []
 
-	for i in xrange(len(satb)):
+	for i in np.arange(len(satb)):
 	    if i == 47: # use this to remove problematic chorales
 	        next 
 	    elif chorales[satb[i]].analyze('key').mode == 'major':
@@ -67,29 +61,41 @@ def save_clean_chorales():
 	    elif chorales[satb[i]].analyze('key').mode == 'minor':
 	        satb_minor.append(chorales[satb[i]])
 
-	write_pickle(satb_major, 'Major Chorales All')
-	write_pickle(satb_minor, 'Minor Chorales All')
-
-def write_pickle(var, filename):
-	"""
-	Save file to memory for easy retreival
-	"""
-    if not os.path.isdir(os.path.expanduser('~') + '/.pickles'):
-        # Use mkdir so we don't get a failure if the dir is created by another process
-        os.system('mkdir ~/.pickles/')
-    with open(os.path.expanduser('~') + '/.pickles/' + filename, 'wb') as handle:
-        pickle.dump(var, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        return
-
-
-def read_pickle(filename):
-	"""
-	Load file from memory quickly
-	"""
-    with open(os.path.expanduser('~') + '/.pickles/' + filename, 'rb') as handle:
-        return pickle.load(handle)
-
+	return {
+		'Major' : satb_major,
+		'Minor' : satb_minor
+	}
 
 """
 These functions are for preparing the chorales for modelling processes
 """
+
+def train_test_split(train_pct, chorales):
+	"""
+	Function to split indices for chorales
+	into training and testing sets
+
+	Parameters
+	----------
+
+		train_pct : percentage of chorales to be used for
+			training set
+
+		chorales : list of musicxml objects
+
+	Returns
+	-------
+
+		dictionary of training and testing sets
+	"""
+
+	# get training and testing indices
+	train_count = int(train_pct * len(chorales))
+	train_idx = list(np.random.choice(len(chorales), train_count, replace=False))
+	test_idx = list(set(np.arange(len(chorales))).difference(set(train_idx)))
+
+	return {
+		'train' : list(np.array(chorales)[train_idx]),
+		'test' : list(np.array(chorales)[test_idx])
+	}
+

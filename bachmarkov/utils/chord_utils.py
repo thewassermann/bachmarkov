@@ -28,15 +28,15 @@ def relOrderedPitchClassesString(orderedPitches, key):
 
 	"""
     
-    # get tonic key as a `pitchClass`
-    tonic = key.getTonic().pitchClass
-    
-    # get relative ordered pitches
-    relOrderedPitches = sorted([(pitch - tonic) % 12 for pitch in orderedPitches])
-    
-    # convert to splittable string
-    relOrderedPitchesStrings = '/'.join(str(p) for p in relOrderedPitches)
-    return(relOrderedPitchesStrings)
+	# get tonic key as a `pitchClass`
+	tonic = key.getTonic().pitchClass
+
+	# get relative ordered pitches
+	relOrderedPitches = sorted([(pitch - tonic) % 12 for pitch in orderedPitches])
+
+	# convert to splittable string
+	relOrderedPitchesStrings = '/'.join(str(p) for p in relOrderedPitches)
+	return(relOrderedPitchesStrings)
 
 
 def degrees_on_beats(chorale):
@@ -56,36 +56,36 @@ def degrees_on_beats(chorale):
 		list of strings of unique chordal indentifiers
 	"""
     
-    # key signature
-    key = chorale.analyze('key') # may need to put this elsewhere to deal with modulation
-    
-    # create output stream
-    outstream = stream.Stream()
-    
-    # chordify the chorale
-    cc = chorale.chordify()
-    
-    # loop through measures
-    for msure in cc.getElementsByClass(stream.Measure):
+	# key signature
+	key = chorale.analyze('key') # may need to put this elsewhere to deal with modulation
+
+	# create output stream
+	outstream = stream.Stream()
+
+	# chordify the chorale
+	cc = chorale.chordify()
+
+	# loop through measures
+	for msure in cc.getElementsByClass(stream.Measure):
         
         # loop through chords
-        for chrd in msure.sliceByBeat().getElementsByClass([chord.Chord, note.Rest]):
+		for chrd in msure.sliceByBeat().getElementsByClass([chord.Chord, note.Rest]):
             
-            # check if on beat
-            if chrd.offset.is_integer():
-                chordout = chrd
-                chordout.quarterLength = 1.
-                outstream.append(chordout)
+			# check if on beat
+			if chrd.offset.is_integer():
+				chordout = chrd
+				chordout.quarterLength = 1.
+				outstream.append(chordout)
     
-    # roman numeral output stream
-    rn_outstream = []
+	# roman numeral output stream
+	rn_outstream = []
+
+	# convert chords to roman numerals
+	for bc in outstream.recurse().getElementsByClass([chord.Chord, note.Rest]):
+		if bc.isRest:
+		    bc = -1
+		else:
+		    bc = relOrderedPitchClassesString(bc.orderedPitchClasses, key)
+		rn_outstream.append(bc)
     
-    # convert chords to roman numerals
-    for bc in outstream.recurse().getElementsByClass([chord.Chord, note.Rest]):
-        if bc.isRest:
-            bc = -1
-        else:
-            bc = relOrderedPitchClassesString(bc.orderedPitchClasses, key)
-        rn_outstream.append(bc)
-    
-    return rn_outstream
+	return rn_outstream
