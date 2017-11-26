@@ -4,6 +4,41 @@ Utility functions for feature/part extraction
 
 from music21 import *
 
+
+def to_crotchet_stream(part_):
+	"""
+	Function to return a a music21.part on quarter note beats
+
+	Parameters
+	----------
+
+		part : music21.part
+
+	Returns
+	-------
+
+		outstream : music21.stream
+			A stream containing notes sounding on beats
+	"""
+    
+	# create output stream
+	outstream = stream.Stream()
+
+	# loop through measures
+	for msure in part_.getElementsByClass(stream.Measure):
+        
+        # loop through chords
+		for nte in msure.sliceByBeat().getElementsByClass([note.Note, note.Rest]):
+            
+            # check if on beat
+			if nte.offset.is_integer():
+				noteout = nte
+				noteout.quarterLength = 1.
+				outstream.append(noteout)
+                
+	return outstream
+
+
 def extract_bassline(chorale):
 	"""
 	Function to return a chorale's bassline on each beat, expressed as degrees of the scale
@@ -21,25 +56,8 @@ def extract_bassline(chorale):
 	"""
     # function to extract the bass line on beats from chorale and put into relative ordered pitch notation
     
-    # create output stream
-	outstream = stream.Stream()
-
-	# chordify the chorale
-	bass = chorale.parts['Bass']
-
-	# loop through measures
-	for msure in bass.getElementsByClass(stream.Measure):
-        
-        # loop through chords and rests
-		for nte in msure.sliceByBeat().getElementsByClass([note.Note, note.Rest]):
-            
-            # check if on beat
-			if nte.offset.is_integer():
-				noteout = nte
-				noteout.quarterLength = 1.
-				outstream.append(noteout)
-                
-                
+	outstream = to_crotchet_stream(chorale.parts['Bass'])
+                       
 	# turn output stream into degrees of the scale
 	degree_outstream = []
 
