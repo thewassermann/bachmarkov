@@ -3,8 +3,9 @@ Class to produce a Hidden Markov Model
 """
 
 import pandas as pd
+import pydot
 import numpy as np
-
+import networkx as nx
 import nltk
 import nltk.probability as prob
 
@@ -220,4 +221,68 @@ class HMM():
 			priors=pstarting
 		)
 
+
+		def steady_state_probabilities(self):
+			"""
+			Function to return the steady state probabilities of 
+			the transition matrix.
+
+			Many ways to solve this, will use eigenvector method here
+			"""
+
+			# //TODO
+			pass
+
+
+def plot_transition_matrix(chorale, transition_matrix):
+	"""
+	Function to plot a directed graph of a transition matrix
+
+	source: http://www.blackarbs.com/blog/introduction-hidden-markov-models-python-networkx-sklearn/2/9/2017
+
+	Parameters
+	----------
+
+		transition_matrix : pandas.DataFrame
+			a (n_states x n_states) dataframe
+
+	Returns
+	-------
+
+		a .png file in the graphs folder
+	"""
+
+	# chorale name
+	title = chorale.metadata.title[:-4]
+
+	# fill in edges for markov chain
+	edges = {}
+	for col in transition_matrix.columns:
+		for idx in transition_matrix.index:
+			# do not include unused edges
+			if transition_matrix.loc[idx,col] != 0:
+				edges[(idx,col)] = round(transition_matrix.loc[idx,col],2)
+
+	edges_wts = edges
+
+	G = nx.DiGraph()
+
+	# add states from index
+	G.add_nodes_from(transition_matrix.index)
+
+	# edges represent transition probabilities
+	for k, v in edges_wts.items():
+	    tmp_origin, tmp_destination = k[0], k[1]
+	    G.add_edge(tmp_origin, tmp_destination, weight=v, label=v)
+
+	pos = nx.drawing.nx_pydot.graphviz_layout(G, prog='dot')
+	nx.draw_networkx(G, pos)
+
+	# create edge labels for jupyter plot but is not necessary
+	edge_labels = {(n1,n2):d['label'] for n1,n2,d in G.edges(data=True)}
+	nx.draw_networkx_edge_labels(G , pos, edge_labels=edge_labels)
+	nx.drawing.nx_pydot.write_dot(G, '{}_markov.dot'.format(title))
+
+	(G,) = pydot.graph_from_dot_file('{}_markov.dot'.format(title))
+	G.write_png('hmm/graphs/{}_markov.png'.format(title))
 
