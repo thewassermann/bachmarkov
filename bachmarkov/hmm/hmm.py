@@ -222,6 +222,18 @@ class HMM():
 		)
 
 
+		def steady_state_probabilities(self):
+			"""
+			Function to return the steady state probabilities of 
+			the transition matrix.
+
+			Many ways to solve this, will use eigenvector method here
+			"""
+
+			# //TODO
+			pass
+
+
 def plot_transition_matrix(chorale, transition_matrix):
 	"""
 	Function to plot a directed graph of a transition matrix
