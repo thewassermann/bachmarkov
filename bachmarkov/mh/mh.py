@@ -5,8 +5,10 @@ Metropolis-Hastings based algorithms
 
 from  music21 import *
 import numpy as np
+import pandas as pd
 
 from tqdm import trange
+import matplotlib.pyplot as plt
 
 from utils import chord_utils, extract_utils
 
@@ -90,6 +92,25 @@ class MH():
 		return out_stream
 
 
+	def show_melody_bass(self):
+		"""
+		Function to show melody and bassline together
+		on a single system
+		"""
+		melody = self.melody.flat.getElementsByClass([note.Note, note.Rest]).flat
+		bass = self.bassline.flat.getElementsByClass([note.Note, note.Rest]).flat
+
+		# conjoin two parts and shows
+		s = stream.Score()
+		p_melody = stream.Part()
+		p_bass = stream.Part()
+		p_melody = melody
+		p_bass = bass
+		s.insert(0, p_melody)
+		s.insert(0, p_bass)
+		s.show()
+
+
 	def meta_fitness(self, note_, index_):
 		"""
 		Function to combine fitness functions
@@ -122,8 +143,8 @@ class MH():
 
 		# to store fitness function outputs
 		scores = {}
-		for name, ff in self.fitness_function_dict.items():
-			scores[name] = ff(self, note_, index_)
+		for name, v in self.fitness_function_dict.items():
+			scores[name] = v.ff(self, note_, index_)
 
 		# weighted average
 		if self.weight_dict is not None:
@@ -166,7 +187,7 @@ class MH():
 		return note.Note(pitch_)
 
     
-	def run(self, n_iter):
+	def run(self, n_iter, profiling):
 		"""
 		Function to run the full MH algo
 
@@ -179,7 +200,16 @@ class MH():
 
 		# flatten notes for quick indexing
 		stream_notes = self.melody.flat.getElementsByClass([note.Note, note.Rest]).flat
+		bass_notes = self.bassline.flat.getElementsByClass([note.Note, note.Rest]).flat
 		stream_length = len(stream_notes)
+
+		# create dataframe to store progress of algo
+		if profiling:
+			profile_df = pd.DataFrame(index=np.arange(n_iter), columns=list(self.fitness_function_dict.keys()))
+
+
+
+		accept_list = []
 
 		# for a given number of iterations:
 		for i in trange(n_iter):
@@ -197,11 +227,17 @@ class MH():
 
 			# accept or reject with a probability given by the 
 			# ratio of current and proposed fitness functions
-			accept_func = prop_fit / curr_fit
-
-			if np.random.uniform() <= accept_func:
+			accept_func = (prop_fit / curr_fit)
+			if np.random.uniform() < accept_func:
+				accept_list.append(accept_func)
 				stream_notes[idx] = prop_note
+			else:
+				accept_list.append(accept_func)
 
+			if profiling:
+				# loop through fitness functions
+				for k,v in self.fitness_function_dict.items():
+					profile_df.loc[i,k] = v.profiling(bass_notes, stream_notes)
 
 		# return to melody format
 		out_stream = stream.Stream()
@@ -213,72 +249,254 @@ class MH():
 				out_stream.append(out_note)
 			else:
 				out_stream.append(el)
-		    
-		return out_stream
+		
+		if profiling:
+			if len(profile_df.columns) == 1:
+				profile_df.plot()
+			else:
+				# plot the results
+				row_num = int(np.ceil(len(profile_df.columns) / 2))
+
+				# initialize row and column iterators
+				row = 0
+				col = 0
+				fig, axs = plt.subplots(row_num, 2, figsize=(12*row_num, 8))
+				for i in np.arange(len(profile_df.columns)):
+
+					ax = np.array(axs).reshape(-1)[i]
+					ax.plot(profile_df.index, profile_df.iloc[:,i])
+					ax.set_xlabel('N iterations')
+					ax.set_ylabel(profile_df.columns[i])
+					ax.set_title(profile_df.columns[i])
+
+					# get to next axis
+					if i % 2 == 1:
+						col += 1
+					else:
+						col = 0
+						row += 1
+
+				# turn axis off if empty
+				if col == 0:
+					ax.axis('off')
+
+				plt.show()
+
+		self.melody = out_stream
+		return accept_list
+		#return out_stream
 
 
 #### FITNESS FUNCTIONS
 
-def ContraryMotion(self, note_, index_):
+class FitnessFunction():
 	"""
-	Contrary motion fitness function
-	""" 
-	bass = self.bassline.flat.getElementsByClass([note.Note, note.Rest]).flat
-	melody = self.melody.flat.getElementsByClass([note.Note, note.Rest]).flat
-
-	# if first index go forward
-	if index_ == 0:
-		note_1_melody = note_
-		note_2_melody = melody[1]
-
-		note_1_bass = bass[0]
-		note_2_bass = bass[1]
-	else:
-	# else go backward
-
-		note_1_melody = melody[index_ -1]
-		note_2_melody = note_      
-
-		note_1_bass = bass[index_ - 1]
-		note_2_bass = bass[index_]
-
-	melody_direction = np.sign(interval.notesToChromatic(note_1_melody, note_2_melody).semitones)
-	bass_direction = np.sign(interval.notesToChromatic(note_1_bass, note_2_bass).semitones)
-
-	# if contray motion : note, ratio given by pachet and roy analysis [EDA]
-	if melody_direction * bass_direction <= 0:
-		return 0.7078
-	# else if parallel motion
-	else:
-		return (1 - 0.7078)
-
-
-def NoLargeJumps(self, note_, index_):
-	"""
-	Prefer smaller melody jumps to larger ones
-
-	Currently linear by semitones
+	Class to store fitness functions
 	"""
 
-	low, high = self.vocal_range
-	semitones_in_range = interval.notesToChromatic(low, high).semitones
+	def __init__(self, name):
+		self.name = name
 
-	melody = self.melody.flat.getElementsByClass([note.Note, note.Rest]).flat
+	def ff(self):
+		pass
 
-	# if first index go forward
-	if index_ == 0:
-		note_1_melody = note_
-		note_2_melody = melody[1]
-	else:
-	# else go backward
+	def profiling(self):
+		pass
 
-		note_1_melody = melody[index_ -1]
-		note_2_melody = note_      
 
-	melody_jump = interval.notesToChromatic(note_1_melody, note_2_melody).semitones
-	jump_to_range_ratio = melody_jump / semitones_in_range
+## make fitness functions a class themselves with a profiling tag
+# so that convergence can be proven or disproven
 
-	return 1 - jump_to_range_ratio
+
+class NoLargeJumps(FitnessFunction):
+
+	def ff(self, mh, note_, index_):
+		"""
+		Prefer smaller melody jumps to larger ones
+		"""
+
+		melody = mh.melody.flat.getElementsByClass([note.Note, note.Rest]).flat
+
+		# replace original melody note with proposed note
+		melody[index_] = note_
+
+		jumps = np.empty((len(melody)-1,))
+
+		# get sum of squared differences for melody
+		for idx in np.arange(1, len(melody)):
+			note_1_melody = melody[idx - 1]
+			note_2_melody = melody[idx]
+
+			melody_jump = interval.notesToChromatic(note_1_melody, note_2_melody).semitones
+
+			jumps[idx - 1] = melody_jump**2
+
+		return (np.nansum(jumps) / (len(melody)-1))**(-1)
+
+
+	def profiling(self, bass, melody):
+
+		jumps = np.empty((len(melody)-1,))
+		for idx in np.arange(1, len(melody)):
+
+			note_1_melody = melody[idx - 1]
+			note_2_melody = melody[idx]
+
+			melody_jump = interval.notesToChromatic(note_1_melody, note_2_melody).semitones
+
+			jumps[idx - 1] = melody_jump**2
+
+		return np.nansum(jumps) / (len(melody)-1)
+
+
+class ContraryMotion(FitnessFunction):
+
+	def __init__(self, name, metric):
+		self.name = name
+		self.metric = metric
+		self.set_metric()
+
+
+	def concordance_table(self, melody, bass):
+		"""
+		Function to product concordance table of direction
+		of part movements
+
+		Parameters
+		----------
+
+		    melody : music21.Part
+		    
+		    bass : music21.Part
+
+		Returns
+		-------
+
+			concordance_table : 2x2 pandas.DataFrame
+		"""
+
+		# get flattened parts
+		p1 = melody.flat.getElementsByClass([note.Note, note.Rest]).flat
+		p2 = bass.flat.getElementsByClass([note.Note, note.Rest]).flat
+
+		# set up DataFrame to produce table
+		arr = np.zeros((2,2))
+		idx = ['Up - Bass', 'Down - Bass']
+		cols = ['Up - Melody', 'Down - Melody']
+		concordance_tbl = pd.DataFrame(arr, index=idx, columns=cols)
+
+		# loop through intervals and fill in concordance table
+		for i in np.arange(1, len(p1)):
+			# directions : neg is down, pos is up
+			dir_p1 = np.sign(interval.notesToChromatic(p1[i-1], p1[i]).semitones)
+			dir_p2 = np.sign(interval.notesToChromatic(p2[i-1], p2[i]).semitones)
+
+			# zero in either part should be assigned equally to
+			# any square
+			if (dir_p1 == 0) or (dir_p2 == 0):
+				rw = np.random.randint(0,2)
+				cl = np.random.randint(0,2)
+				concordance_tbl.iloc[rw,cl] += 1
+			elif (dir_p1 < 0) and (dir_p2 > 0):
+			    concordance_tbl.iloc[0, 1] += 1
+			elif (dir_p1 > 0) and (dir_p2 < 0):
+			    concordance_tbl.iloc[1, 0] += 1
+			elif (dir_p1 < 0) and (dir_p2 < 0):
+			    concordance_tbl.iloc[1, 1] += 1
+			elif (dir_p1 > 0) and (dir_p2 > 0):
+			    concordance_tbl.iloc[0, 0] += 1
+			    
+		return concordance_tbl
+
+
+	def set_metric(self):
+		if self.metric == 'cohen_kappa':
+			self.metric_func = self.cohen_kappa
+		elif self.metric == 'agreement_proportion':
+			self.metric_func = self.agreement_proportion
+		else:
+			print('Use one of the given metric functions')
+			return -1
+
+
+	def cohen_kappa(self, concordance_tbl):
+		"""
+		Function to perform Cohen's Kappa measure of
+		contrary motiuon given a concordance table
+
+		Paper:
+		    http://journals.sagepub.com/doi/10.1177/001316446002000104
+
+		Parameters
+		----------
+
+		    concordance_tbl : pandas.DataFrame
+		        concordance table
+		        
+		Returns
+		-------
+
+		    kappa : float
+		        Cohen's Kappa
+		"""
+
+		# number of entries total in table
+		N = concordance_tbl.values.sum()
+
+		# designate motions
+		contrary = (concordance_tbl.iloc[0,0] + concordance_tbl.iloc[1,1]) / N
+
+		# bass up at random
+		p_yes = (concordance_tbl.iloc[0,0] + concordance_tbl.iloc[0,1]) * \
+		    (concordance_tbl.iloc[0,0] + concordance_tbl.iloc[1,0]) / (N**2)
+		p_no = (concordance_tbl.iloc[0,1] + concordance_tbl.iloc[1,1]) * \
+		    (concordance_tbl.iloc[0,1] + concordance_tbl.iloc[1,1]) / (N**2)
+		random_agreement = p_yes + p_no
+
+		kappa = (contrary - random_agreement) / (1 - random_agreement)
+
+		# to prevent negative values, add 1
+		return kappa + 1
+
+
+	def agreement_proportion(self, concordance_tbl):
+		"""
+		number contrary / total number
+
+		Parameters
+		----------
+
+		    concordance_tbl : pandas.DataFrame
+		        concordance table
+		        
+		Returns
+		-------
+
+		    agreement_prop : float
+		"""
+
+		# number of entries total in table
+		N = concordance_tbl.values.sum()
+
+		agreement_prop = (concordance_tbl.iloc[0,1] + concordance_tbl.iloc[1,0]) / N
+		return agreement_prop
+		
+    
+	def ff(self, mh, note_, index_):
+		melody = mh.melody.flat.getElementsByClass([note.Note, note.Rest]).flat
+		bass = mh.bassline.flat.getElementsByClass([note.Note, note.Rest]).flat
+
+		melody[index_] = note_
+
+		ct = self.concordance_table(melody, bass)
+		return self.metric_func(ct)
+        
+	def profiling(self, bass, melody):
+		melody = melody.flat.getElementsByClass([note.Note, note.Rest]).flat
+		bass = bass.flat.getElementsByClass([note.Note, note.Rest]).flat
+
+		ct = self.concordance_table(melody, bass)
+		return self.metric_func(ct)
         
 
 ##### IMPLEMENTATIONS
@@ -288,9 +506,9 @@ def PachetRoySopranoAlgo(chorale):
 		chorale,
 		(pitch.Pitch('c4'), pitch.Pitch('g5')),
 		{
-			'NLJ' : NoLargeJumps,
-			'CM' : ContraryMotion
+			'NLJ' : NoLargeJumps('NLJ'),
+			#'CM' : ContraryMotion('CM', 'agreement_proportion')
 		},
-		#weight_dict={'NLJ' : 1, 'CM' : 3}
+		#weight_dict={'NLJ': 1 , 'CM' : 15}
 	)
         
