@@ -39,47 +39,65 @@ def to_crotchet_stream(part, chord_flag=False):
 
 					if not chord_flag:
                     
-						if isinstance(measure_item, (chord.Chord, note.Note, note.Rest)):
+						if isinstance(measure_item, (chord.Chord, note.Note)):
 							# check offset and beat number
 							offset = measure_item.offset
 							dur = measure_item.duration.quarterLength
 
 							# on beat note, less than 1 beat
 							if offset.is_integer() and dur <= 1.:
-								m.insert(offset, note.Note(measure_item.pitch, quarterLength=1))
+								if isinstance(measure_item, (note.Rest)):
+									m.insert(offset, note.Rest(quarterLength=1))
+								else:
+									m.insert(offset, note.Note(measure_item.pitch, quarterLength=1))
 	                            
 	                        # on beat note, more than one beat
 							elif offset.is_integer() and dur > 1.:
 								for cnt in np.arange(np.floor(dur)):
-									m.insert(offset + cnt, note.Note(measure_item.pitch, quarterLength=1))
+									if isinstance(measure_item, (note.Rest)):
+										m.insert(offset + cnt, note.Rest(quarterLength=1))
+									else:
+										m.insert(offset + cnt, note.Note(measure_item.pitch, quarterLength=1))
 	                                
 	                        # on non-beat note, not covering beat -> skip
 	                        # on non-beat note, covering beat
 							elif dur >= 1.:
 								for cnt in np.arange(np.floor(dur)):
-									m.insert(np.ceil(offset) + cnt, note.Note(measure_item.pitch, quarterLength=1))
+									if isinstance(measure_item, (note.Rest)):
+										m.insert(np.ceil(offset) + cnt, note.Rest(quarterLength=1))
+									else:
+										m.insert(np.ceil(offset) + cnt, note.Note(measure_item.pitch, quarterLength=1))
 
 					else:
 
-						if isinstance(measure_item, (chord.Chord, note.Note, note.Rest)):
+						if isinstance(measure_item, (chord.Chord, note.Note)):
 							# check offset and beat number
 							offset = measure_item.offset
 							dur = measure_item.duration.quarterLength
 
 							# on beat note, less than 1 beat
 							if offset.is_integer() and dur <= 1.:
-								m.insert(offset, chord.Chord(measure_item.pitches, quarterLength=1))
+								if isinstance(measure_item, (note.Rest)):
+									m.insert(offset, note.Rest(quarterLength=1))
+								else:
+									m.insert(offset, chord.Chord(measure_item.pitches, quarterLength=1))
 	                            
 	                        # on beat note, more than one beat
 							elif offset.is_integer() and dur > 1.:
 								for cnt in np.arange(np.floor(dur)):
-									m.insert(offset + cnt, chord.Chord(measure_item.pitches, quarterLength=1))
+									if isinstance(measure_item, (note.Rest)):
+										m.insert(offset + cnt, note.Rest(quarterLength=1))
+									else:
+										m.insert(offset + cnt, chord.Chord(measure_item.pitches, quarterLength=1))
 	                                
 	                        # on non-beat note, not covering beat -> skip
 	                        # on non-beat note, covering beat
 							elif dur >= 1.:
 								for cnt in np.arange(np.floor(dur)):
-									m.insert(np.ceil(offset) + cnt, chord.Chord(measure_item.pitches, quarterLength=1))
+									if isinstance(measure_item, (note.Rest)):
+										m.insert(np.ceil(offset) + cnt, note.Rest(quarterLength=1))
+									else:
+										m.insert(np.ceil(offset) + cnt, chord.Chord(measure_item.pitches, quarterLength=1))
                                 
 				# add measure to score
 				out_stream.insert(measure_offset, m)

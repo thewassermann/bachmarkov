@@ -18,10 +18,18 @@ def closest_note_not_rest(line, idx, func):
 	"""
 	Helper function to get the closest non-rest note
 	"""
+
+	#if the piece begins/ends on a rest, just use same note
+	out = line[idx - 1]
+
+	 # hope to update to nearest note
 	for i in np.arange(1, idx):
-		if line[func(idx,i)].isNote:
+		if func(idx, i) >= len(line):
+			break
+		if line[func(idx,i)].isNote and not line[func(idx,i)].isRest:
 			out = line[func(idx,i)]
 			break
+
 	return out
 
 def partbool(chorales, string):

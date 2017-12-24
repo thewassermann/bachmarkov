@@ -11,6 +11,8 @@ from scipy.stats import chi2
 from tqdm import trange
 import matplotlib.pyplot as plt
 
+import copy
+
 from utils import chord_utils, extract_utils, data_utils
 
 class MH():
@@ -44,7 +46,7 @@ class MH():
 		low_high_int = interval.Interval(noteStart=low, noteEnd=high)
 		num_semitones =  low_high_int.semitones
 
-		low_note = note.Note(low.nameWithOctave)
+		low_note = note.Note(low.nameWithOctave, quarterLength=1)
 
 		# pick random semitone in range
 		semitone_select = np.random.randint(1, num_semitones)
@@ -75,20 +77,28 @@ class MH():
 		        part initialized to random note in the range
 
 		"""
-
 		out_stream = stream.Stream()
 
-		# TODO, maybe make diatonic for easier convergence?
-
 		# loop through measures
-		for el in self.bassline.iter:
-			if el.isNote:
-				if not el.isRest:
-					# select a random index for a semitone and add to outstream
-					out_note = self.random_note_in_range()
-					out_stream.append(out_note)
+		for el in self.bassline.recurse(skipSelf=True):
+			if el == clef.BassClef():
+				out_stream.insert(clef.TrebleClef())
+			elif isinstance(el, instrument.Instrument):
+				out_stream.insert(instrument.Soprano())
+			elif isinstance(el, (stream.Measure)):
+				# select a random index for a semitone and add to outstream
+				m = stream.Measure()
+				for measure_el in el:
+					if isinstance(el, note.Note):
+						out_note = self.random_note_in_range()
+						m.insert(measure_el.offset, out_note)
+					else:
+						m.insert(measure_el.offset, note.Rest(quarterLength=1))
+				out_stream.insert(el.offset, m)
+			elif isinstance (el, (note.Note, note.Rest)):
+				continue
 			else:
-				out_stream.append(el)
+				out_stream.insert(el.offset, copy.deepcopy(el))
 
 		return out_stream
 
@@ -98,17 +108,13 @@ class MH():
 		Function to show melody and bassline together
 		on a single system
 		"""
-		melody = self.melody.flat.getElementsByClass([note.Note, note.Rest]).flat
-		bass = self.bassline.flat.getElementsByClass([note.Note, note.Rest]).flat
+		melody = self.melody
+		bass = self.bassline
 
 		# conjoin two parts and shows
 		s = stream.Score()
-		p_melody = stream.Part()
-		p_bass = stream.Part()
-		p_melody = melody
-		p_bass = bass
-		s.insert(0, p_melody)
-		s.insert(0, p_bass)
+		s.insert(0, stream.Part(melody))
+		s.insert(0, stream.Part(bass))
 		s.show()
 
 
@@ -145,7 +151,7 @@ class MH():
 		# to store fitness function outputs
 		scores = {}
 		for name, v in self.fitness_function_dict.items():
-			scores[name] = v.ff(self, note_, index_)
+			scores[name] = v.ff(self, copy.deepcopy(note_), index_)
 
 		# weighted average
 		if self.weight_dict is not None:
@@ -211,14 +217,9 @@ class MH():
 		if profiling:
 			profile_df = pd.DataFrame(index=np.arange(n_iter), columns=list(self.fitness_function_dict.keys()))
 
-		# if profiling but not plotting, no tqdm else tqdm
-		if profiling and not plotting:
-			range_func = np.arange
-		else:
-			range_func = trange
 
 		# for a given number of iterations:
-		for i in range_func(n_iter):
+		for i in np.arange(n_iter):
 
 			# select a note/chord at random (note beginning/end difficulties)
 			idx = np.random.randint(stream_length)
@@ -246,15 +247,27 @@ class MH():
 		out_stream = stream.Stream()
 
 		# loop through measures
-		for i, el in enumerate(self.melody.iter):
-			if el.isNote:
-				out_note = stream_notes[i]
-				try:
-					out_stream.append(out_note)
-				except:
-					print(out_note)
+		note_index = 0
+		for el in self.bassline.recurse(skipSelf=True):
+			if el == clef.BassClef():
+				out_stream.insert(clef.TrebleClef())
+			elif isinstance(el, instrument.Instrument):
+				out_stream.insert(instrument.Soprano())
+			elif isinstance(el, (stream.Measure)):
+				# select a random index for a semitone and add to outstream
+				m = stream.Measure()
+				for measure_el in el:
+					if isinstance(el, note.Note):
+						out_note = stream_notes[note_index]
+						m.insert(measure_el.offset, out_note)
+					else:
+						m.insert(measure_el.offset, note.Rest(quarterLength=1))
+					note_index += 1
+				out_stream.insert(el.offset, m)
+			elif isinstance (el, (note.Note, note.Rest)):
+				continue
 			else:
-				out_stream.append(el)
+				out_stream.insert(el.offset, copy.deepcopy(el))
 		
 		if plotting:
 			if len(profile_df.columns) == 1:
@@ -291,6 +304,7 @@ class MH():
 		self.melody = out_stream
 
 		if profiling:
+			print(profile_df)
 			return profile_df
 		else:
 			return out_stream
@@ -327,7 +341,7 @@ class NoLargeJumps(FitnessFunction):
 		melody = mh.melody.flat.getElementsByClass([note.Note, note.Rest]).flat
 
 		# replace original melody note with proposed note
-		melody[index_] = note_
+		melody[index_] = copy.deepcopy(note_)
 
 		jumps = np.empty((len(melody)-1,))
 
@@ -344,8 +358,10 @@ class NoLargeJumps(FitnessFunction):
 			if note_2_melody.isRest:
 				note_2_melody = data_utils.closest_note_not_rest(melody, idx, np.add)
 
-
-			melody_jump = interval.notesToChromatic(note_1_melody, note_2_melody).semitones
+			if note_1_melody.isRest or note_2_melody.isRest:
+				melody_jump = np.nan
+			else:
+				melody_jump = interval.notesToChromatic(note_1_melody, note_2_melody).semitones
 
 			jumps[idx - 1] = melody_jump**2
 
@@ -367,7 +383,10 @@ class NoLargeJumps(FitnessFunction):
 			if note_2_melody.isRest:
 				note_2_melody = data_utils.closest_note_not_rest(melody, idx, np.add)
 
-			melody_jump = interval.notesToChromatic(note_1_melody, note_2_melody).semitones
+			if note_1_melody.isRest or note_2_melody.isRest:
+				melody_jump = np.nan
+			else:
+				melody_jump = interval.notesToChromatic(note_1_melody, note_2_melody).semitones
 
 			jumps[idx - 1] = melody_jump**2
 
@@ -436,12 +455,19 @@ class ContraryMotion(FitnessFunction):
 			if p2_to.isRest:
 				p2_to = data_utils.closest_note_not_rest(bass, idx, np.add)
 
-			dir_p1 = np.sign(interval.notesToChromatic(p1_from, p1_to).semitones)
-			dir_p2 = np.sign(interval.notesToChromatic(p2_from, p2_to).semitones)
+			# if begins or ends on a rest
+			if p1_to.isRest or p2_to.isRest or p1_from.isRest or p2_from.isRest:
+				dir_p1 = np.nan
+				dir_p2 = np.nan
+			else:
+				dir_p1 = np.sign(interval.notesToChromatic(p1_from, p1_to).semitones)
+				dir_p2 = np.sign(interval.notesToChromatic(p2_from, p2_to).semitones)
 
 			# zero in either part should be assigned to either
 			# contrary equally
-			if (dir_p1 == 0) or (dir_p2 == 0):
+			if np.isnan(dir_p1) or np.isnan(dir_p2):
+				continue
+			elif (dir_p1 == 0) or (dir_p2 == 0):
 				rw = np.random.randint(0,2)
 				if rw == 1:
 					cl = 0
@@ -456,6 +482,7 @@ class ContraryMotion(FitnessFunction):
 			    concordance_tbl.iloc[1, 1] += 1
 			elif (dir_p1 > 0) and (dir_p2 > 0):
 			    concordance_tbl.iloc[0, 0] += 1
+
 			    
 		return concordance_tbl
 
@@ -543,7 +570,7 @@ class ContraryMotion(FitnessFunction):
 		melody = mh.melody.flat.getElementsByClass([note.Note, note.Rest]).flat
 		bass = mh.bassline.flat.getElementsByClass([note.Note, note.Rest]).flat
 
-		melody[index_] = note_
+		melody[index_] = copy.deepcopy(note_)
 
 		ct = self.concordance_table(melody, bass)
 		return self.metric_func(ct)
