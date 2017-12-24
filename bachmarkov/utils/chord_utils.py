@@ -4,6 +4,9 @@ Utility functions for dealing with chords
 
 from music21 import *
 
+import numpy as np
+from utils import extract_utils
+
 
 def relOrderedPitchClassesString(orderedPitches, key):
 	"""
@@ -65,17 +68,7 @@ def degrees_on_beats(chorale):
 	# chordify the chorale
 	cc = chorale.chordify()
 
-	# loop through measures
-	for msure in cc.getElementsByClass(stream.Measure):
-        
-        # loop through chords
-		for chrd in msure.sliceByBeat().getElementsByClass([chord.Chord, note.Rest]):
-            
-			# check if on beat
-			if chrd.offset.is_integer():
-				chordout = chrd
-				chordout.quarterLength = 1.
-				outstream.append(chordout)
+	outstream = extract_utils.to_crotchet_stream(cc, chord_flag=True)
     
 	# roman numeral output stream
 	rn_outstream = []

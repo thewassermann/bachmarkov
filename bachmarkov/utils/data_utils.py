@@ -13,6 +13,17 @@ import sys
 These functions are for the reading/writing/cleaning of chorales
 """
 
+
+def closest_note_not_rest(line, idx, func):
+	"""
+	Helper function to get the closest non-rest note
+	"""
+	for i in np.arange(1, idx):
+		if line[func(idx,i)].isNote:
+			out = line[func(idx,i)]
+			break
+	return out
+
 def partbool(chorales, string):
 	"""
 	Helper function to ensure that the chorales have the

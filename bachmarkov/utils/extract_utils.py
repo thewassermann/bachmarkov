@@ -3,41 +3,94 @@ Utility functions for feature/part extraction
 """
 
 from music21 import *
+import numpy as np
 
 
-def to_crotchet_stream(part_):
+def to_crotchet_stream(part, chord_flag=False):
 	"""
-	Function to return a a music21.part on quarter note beats
+	Function to take in part of a chorale and turn it into
+	a stream of crotchets (quarter notes)
 
 	Parameters
 	----------
 
-		part : music21.part
-
+	    part : music21.stream.Part
+	    
 	Returns
-	-------
 
-		outstream : music21.stream
-			A stream containing notes sounding on beats
+	    music21.stream.Part exactly the same
+	    as the parameter `part` but with only
+	    notes on beats
 	"""
-    
-	# create output stream
-	outstream = stream.Stream()
 
-	# loop through measures
-	for msure in part_.getElementsByClass(stream.Measure):
-        
-        # loop through chords
-		for nte in msure.sliceByBeat().getElementsByClass([note.Note, note.Rest]):
+	# structure for outputting data
+	out_stream = stream.Part()
+
+	# recurse through all data in given part
+	# and return only notes with whole quarter beats
+	for item in part.recurse(skipSelf=True):
             
-            # check if on beat
-			if nte.offset.is_integer():
-				noteout = nte
-				noteout.quarterLength = 1.
-				outstream.append(noteout)
-                
-	return outstream
+            # get measure offset
+			if isinstance(item, (stream.Measure)):
+				measure_offset = item.offset
+				m = stream.Measure()
 
+				for measure_item in item:
+
+					if not chord_flag:
+                    
+						if isinstance(measure_item, (chord.Chord, note.Note, note.Rest)):
+							# check offset and beat number
+							offset = measure_item.offset
+							dur = measure_item.duration.quarterLength
+
+							# on beat note, less than 1 beat
+							if offset.is_integer() and dur <= 1.:
+								m.insert(offset, note.Note(measure_item.pitch, quarterLength=1))
+	                            
+	                        # on beat note, more than one beat
+							elif offset.is_integer() and dur > 1.:
+								for cnt in np.arange(np.floor(dur)):
+									m.insert(offset + cnt, note.Note(measure_item.pitch, quarterLength=1))
+	                                
+	                        # on non-beat note, not covering beat -> skip
+	                        # on non-beat note, covering beat
+							elif dur >= 1.:
+								for cnt in np.arange(np.floor(dur)):
+									m.insert(np.ceil(offset) + cnt, note.Note(measure_item.pitch, quarterLength=1))
+
+					else:
+
+						if isinstance(measure_item, (chord.Chord, note.Note, note.Rest)):
+							# check offset and beat number
+							offset = measure_item.offset
+							dur = measure_item.duration.quarterLength
+
+							# on beat note, less than 1 beat
+							if offset.is_integer() and dur <= 1.:
+								m.insert(offset, chord.Chord(measure_item.pitches, quarterLength=1))
+	                            
+	                        # on beat note, more than one beat
+							elif offset.is_integer() and dur > 1.:
+								for cnt in np.arange(np.floor(dur)):
+									m.insert(offset + cnt, chord.Chord(measure_item.pitches, quarterLength=1))
+	                                
+	                        # on non-beat note, not covering beat -> skip
+	                        # on non-beat note, covering beat
+							elif dur >= 1.:
+								for cnt in np.arange(np.floor(dur)):
+									m.insert(np.ceil(offset) + cnt, chord.Chord(measure_item.pitches, quarterLength=1))
+                                
+				# add measure to score
+				out_stream.insert(measure_offset, m)
+            
+            # notes and rests dealt with in measure code
+			elif isinstance(item, (chord.Chord, note.Note, note.Rest)):
+				continue
+			else:
+				out_stream.insert(item.offset, item)
+                    
+	return out_stream
 
 def extract_bassline(chorale):
 	"""

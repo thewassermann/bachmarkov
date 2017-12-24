@@ -6,11 +6,12 @@ Metropolis-Hastings based algorithms
 from  music21 import *
 import numpy as np
 import pandas as pd
+from scipy.stats import chi2
 
 from tqdm import trange
 import matplotlib.pyplot as plt
 
-from utils import chord_utils, extract_utils
+from utils import chord_utils, extract_utils, data_utils
 
 class MH():
 	"""
@@ -159,9 +160,12 @@ class MH():
 		"""
 
 		# select random note from chord
-		possible_notes = self.chords[index_].split('/')
-		select_idx = np.random.randint(len(possible_notes))
-		semitones_above_tonic = int(possible_notes[select_idx])
+		if isinstance(self.chords[index_], int):
+			semitones_above_tonic = self.chords[index_]
+		else:
+			possible_notes = self.chords[index_].split('/')
+			select_idx = np.random.randint(len(possible_notes))
+			semitones_above_tonic = int(possible_notes[select_idx])
 		
 		# return note
 		tonic = self.key.getTonic()
@@ -187,7 +191,7 @@ class MH():
 		return note.Note(pitch_)
 
     
-	def run(self, n_iter, profiling):
+	def run(self, n_iter, profiling, plotting=True):
 		"""
 		Function to run the full MH algo
 
@@ -207,12 +211,14 @@ class MH():
 		if profiling:
 			profile_df = pd.DataFrame(index=np.arange(n_iter), columns=list(self.fitness_function_dict.keys()))
 
-
-
-		accept_list = []
+		# if profiling but not plotting, no tqdm else tqdm
+		if profiling and not plotting:
+			range_func = np.arange
+		else:
+			range_func = trange
 
 		# for a given number of iterations:
-		for i in trange(n_iter):
+		for i in range_func(n_iter):
 
 			# select a note/chord at random (note beginning/end difficulties)
 			idx = np.random.randint(stream_length)
@@ -229,10 +235,7 @@ class MH():
 			# ratio of current and proposed fitness functions
 			accept_func = (prop_fit / curr_fit)
 			if np.random.uniform() < accept_func:
-				accept_list.append(accept_func)
 				stream_notes[idx] = prop_note
-			else:
-				accept_list.append(accept_func)
 
 			if profiling:
 				# loop through fitness functions
@@ -246,11 +249,14 @@ class MH():
 		for i, el in enumerate(self.melody.iter):
 			if el.isNote:
 				out_note = stream_notes[i]
-				out_stream.append(out_note)
+				try:
+					out_stream.append(out_note)
+				except:
+					print(out_note)
 			else:
 				out_stream.append(el)
 		
-		if profiling:
+		if plotting:
 			if len(profile_df.columns) == 1:
 				profile_df.plot()
 			else:
@@ -283,8 +289,11 @@ class MH():
 				plt.show()
 
 		self.melody = out_stream
-		return accept_list
-		#return out_stream
+
+		if profiling:
+			return profile_df
+		else:
+			return out_stream
 
 
 #### FITNESS FUNCTIONS
@@ -324,8 +333,17 @@ class NoLargeJumps(FitnessFunction):
 
 		# get sum of squared differences for melody
 		for idx in np.arange(1, len(melody)):
+
 			note_1_melody = melody[idx - 1]
+
+			if note_1_melody.isRest:
+				note_1_melody = data_utils.closest_note_not_rest(melody, idx, np.subtract)
+
 			note_2_melody = melody[idx]
+
+			if note_2_melody.isRest:
+				note_2_melody = data_utils.closest_note_not_rest(melody, idx, np.add)
+
 
 			melody_jump = interval.notesToChromatic(note_1_melody, note_2_melody).semitones
 
@@ -340,7 +358,14 @@ class NoLargeJumps(FitnessFunction):
 		for idx in np.arange(1, len(melody)):
 
 			note_1_melody = melody[idx - 1]
+
+			if note_1_melody.isRest:
+				note_1_melody = data_utils.closest_note_not_rest(melody, idx, np.subtract)
+
 			note_2_melody = melody[idx]
+
+			if note_2_melody.isRest:
+				note_2_melody = data_utils.closest_note_not_rest(melody, idx, np.add)
 
 			melody_jump = interval.notesToChromatic(note_1_melody, note_2_melody).semitones
 
@@ -386,16 +411,42 @@ class ContraryMotion(FitnessFunction):
 		concordance_tbl = pd.DataFrame(arr, index=idx, columns=cols)
 
 		# loop through intervals and fill in concordance table
-		for i in np.arange(1, len(p1)):
+		for idx in np.arange(1, len(p1)):
 			# directions : neg is down, pos is up
-			dir_p1 = np.sign(interval.notesToChromatic(p1[i-1], p1[i]).semitones)
-			dir_p2 = np.sign(interval.notesToChromatic(p2[i-1], p2[i]).semitones)
 
-			# zero in either part should be assigned equally to
-			# any square
+			# if rest in melody
+			p1_from = melody[idx - 1]
+
+			if p1_from.isRest:
+				p1_from = data_utils.closest_note_not_rest(melody, idx, np.subtract)
+
+			p1_to = melody[idx]
+
+			if p1_to.isRest:
+				p1_to = data_utils.closest_note_not_rest(melody, idx, np.add)
+
+			# if rest in bass
+			p2_from = bass[idx - 1]
+
+			if p2_from.isRest:
+				p2_from = data_utils.closest_note_not_rest(bass, idx, np.subtract)
+
+			p2_to = bass[idx]
+
+			if p2_to.isRest:
+				p2_to = data_utils.closest_note_not_rest(bass, idx, np.add)
+
+			dir_p1 = np.sign(interval.notesToChromatic(p1_from, p1_to).semitones)
+			dir_p2 = np.sign(interval.notesToChromatic(p2_from, p2_to).semitones)
+
+			# zero in either part should be assigned to either
+			# contrary equally
 			if (dir_p1 == 0) or (dir_p2 == 0):
 				rw = np.random.randint(0,2)
-				cl = np.random.randint(0,2)
+				if rw == 1:
+					cl = 0
+				else:
+					cl = 1
 				concordance_tbl.iloc[rw,cl] += 1
 			elif (dir_p1 < 0) and (dir_p2 > 0):
 			    concordance_tbl.iloc[0, 1] += 1
@@ -414,6 +465,8 @@ class ContraryMotion(FitnessFunction):
 			self.metric_func = self.cohen_kappa
 		elif self.metric == 'agreement_proportion':
 			self.metric_func = self.agreement_proportion
+		elif self.metric == 'mcnemar':
+			self.metric_func = self.mcnemar		
 		else:
 			print('Use one of the given metric functions')
 			return -1
@@ -450,7 +503,7 @@ class ContraryMotion(FitnessFunction):
 		p_yes = (concordance_tbl.iloc[0,0] + concordance_tbl.iloc[0,1]) * \
 		    (concordance_tbl.iloc[0,0] + concordance_tbl.iloc[1,0]) / (N**2)
 		p_no = (concordance_tbl.iloc[0,1] + concordance_tbl.iloc[1,1]) * \
-		    (concordance_tbl.iloc[0,1] + concordance_tbl.iloc[1,1]) / (N**2)
+		    (concordance_tbl.iloc[1,0] + concordance_tbl.iloc[1,1]) / (N**2)
 		random_agreement = p_yes + p_no
 
 		kappa = (contrary - random_agreement) / (1 - random_agreement)
@@ -480,7 +533,11 @@ class ContraryMotion(FitnessFunction):
 
 		agreement_prop = (concordance_tbl.iloc[0,1] + concordance_tbl.iloc[1,0]) / N
 		return agreement_prop
-		
+
+	def mcnemar(self, concordance_tbl):
+		mcnemar_stat = (((concordance_tbl.iloc[1,0] - concordance_tbl.iloc[0,1])**2) / \
+			(concordance_tbl.iloc[1,0] + concordance_tbl.iloc[0,1])) + 0.1
+		return chi2.cdf(mcnemar_stat, df=1)
     
 	def ff(self, mh, note_, index_):
 		melody = mh.melody.flat.getElementsByClass([note.Note, note.Rest]).flat
@@ -507,8 +564,62 @@ def PachetRoySopranoAlgo(chorale):
 		(pitch.Pitch('c4'), pitch.Pitch('g5')),
 		{
 			'NLJ' : NoLargeJumps('NLJ'),
-			#'CM' : ContraryMotion('CM', 'agreement_proportion')
+			'CM' : ContraryMotion('CM', 'mcnemar')
 		},
-		#weight_dict={'NLJ': 1 , 'CM' : 15}
+		weight_dict={'NLJ': 10 , 'CM' : 2}
 	)
-        
+
+
+def run_batch_profile(n_iter, mh_algo, chorales):
+	"""
+	Function to run a batch of MH algorithms and 
+	observe how the data behaves.
+
+	Parameters
+	----------
+
+		n_iter : int
+			Number of iterations to run for each chorale
+
+		mh_algo : mh.MH
+			particular mh Implementation
+
+		chorales : list of music.Scores
+
+	Returns
+	-------
+
+		Diagnostic information
+	"""
+
+	# length of list of chorales
+	n_chorales = len(chorales)
+
+	# prepare data structures for diagnostics
+	starting_fitness = np.empty((n_chorales,))
+	finishing_fitness = np.empty((n_chorales,))
+	full_fitness = np.empty((n_chorales,n_iter))
+
+
+	# row = 0
+	# col = 0
+	# fig, axs = plt.subplots(num_constr, 2, figsize=(12*num_constr, 8))
+	# loop through chorales
+	for i in trange(n_chorales):
+		
+		algo = mh_algo(chorales[i])
+
+		# run MH algo
+		meta_scores = algo.run(n_iter, True, plotting=False)
+
+		# TODO MAKE SEPARATE FOR EACH FITNESS FUNCTION
+		starting_fitness[i] = meta_scores.iloc[0,0]
+		finishing_fitness[i] = meta_scores.iloc[0,-1]
+		full_fitness[i, :] = meta_scores.mean(axis=1)
+
+	# print output
+	fig, ax = plt.subplots(1,1)
+	for j in np.arange(n_chorales):
+		ax.plot(np.arange(n_iter), full_fitness[j,:], color='blue', alpha=0.2)
+
+
