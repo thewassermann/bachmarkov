@@ -89,7 +89,7 @@ class MH():
 				# select a random index for a semitone and add to outstream
 				m = stream.Measure()
 				for measure_el in el:
-					if isinstance(el, note.Note):
+					if isinstance(measure_el, note.Note):
 						out_note = self.random_note_in_range()
 						m.insert(measure_el.offset, out_note)
 					else:
@@ -209,20 +209,27 @@ class MH():
 		"""
 
 		# flatten notes for quick indexing
-		stream_notes = self.melody.flat.getElementsByClass([note.Note, note.Rest]).flat
-		bass_notes = self.bassline.flat.getElementsByClass([note.Note, note.Rest]).flat
+		stream_notes = list(self.melody.recurse(classFilter=('Note', 'Rest')))
+		bass_notes = list(self.bassline.recurse(classFilter=('Note', 'Rest')))
 		stream_length = len(stream_notes)
 
 		# create dataframe to store progress of algo
 		if profiling:
 			profile_df = pd.DataFrame(index=np.arange(n_iter), columns=list(self.fitness_function_dict.keys()))
 
+		# get positions of rests so they may be avoided
+		rest_pos = []
+		for i, s in enumerate(stream_notes):
+			if s.isRest:
+				rest_pos.append(i)
+
+		stream_choices = [x for x in np.arange(stream_length) if x not in rest_pos]
 
 		# for a given number of iterations:
-		for i in np.arange(n_iter):
+		for i in trange(n_iter):
 
 			# select a note/chord at random (note beginning/end difficulties)
-			idx = np.random.randint(stream_length)
+			idx = np.random.choice(stream_choices)
 			curr_note = stream_notes[idx]
 
 			# propose a new note
@@ -245,29 +252,7 @@ class MH():
 
 		# return to melody format
 		out_stream = stream.Stream()
-
-		# loop through measures
-		note_index = 0
-		for el in self.bassline.recurse(skipSelf=True):
-			if el == clef.BassClef():
-				out_stream.insert(clef.TrebleClef())
-			elif isinstance(el, instrument.Instrument):
-				out_stream.insert(instrument.Soprano())
-			elif isinstance(el, (stream.Measure)):
-				# select a random index for a semitone and add to outstream
-				m = stream.Measure()
-				for measure_el in el:
-					if isinstance(el, note.Note):
-						out_note = stream_notes[note_index]
-						m.insert(measure_el.offset, out_note)
-					else:
-						m.insert(measure_el.offset, note.Rest(quarterLength=1))
-					note_index += 1
-				out_stream.insert(el.offset, m)
-			elif isinstance (el, (note.Note, note.Rest)):
-				continue
-			else:
-				out_stream.insert(el.offset, copy.deepcopy(el))
+		out_stream = extract_utils.flattened_to_stream(stream_notes, self.bassline, out_stream)
 		
 		if plotting:
 			if len(profile_df.columns) == 1:
@@ -304,7 +289,6 @@ class MH():
 		self.melody = out_stream
 
 		if profiling:
-			print(profile_df)
 			return profile_df
 		else:
 			return out_stream
@@ -338,59 +322,20 @@ class NoLargeJumps(FitnessFunction):
 		Prefer smaller melody jumps to larger ones
 		"""
 
-		melody = mh.melody.flat.getElementsByClass([note.Note, note.Rest]).flat
+		melody = list(mh.melody.recurse(classFilter=('Note', 'Rest')))
 
 		# replace original melody note with proposed note
 		melody[index_] = copy.deepcopy(note_)
-
-		jumps = np.empty((len(melody)-1,))
-
-		# get sum of squared differences for melody
-		for idx in np.arange(1, len(melody)):
-
-			note_1_melody = melody[idx - 1]
-
-			if note_1_melody.isRest:
-				note_1_melody = data_utils.closest_note_not_rest(melody, idx, np.subtract)
-
-			note_2_melody = melody[idx]
-
-			if note_2_melody.isRest:
-				note_2_melody = data_utils.closest_note_not_rest(melody, idx, np.add)
-
-			if note_1_melody.isRest or note_2_melody.isRest:
-				melody_jump = np.nan
-			else:
-				melody_jump = interval.notesToChromatic(note_1_melody, note_2_melody).semitones
-
-			jumps[idx - 1] = melody_jump**2
-
-		return (np.nansum(jumps) / (len(melody)-1))**(-1)
+		intervals = extract_utils.get_intervals(melody)
+		return ((1/len(intervals))*(np.nansum(intervals**2)))**-1
 
 
 	def profiling(self, bass, melody):
 
-		jumps = np.empty((len(melody)-1,))
-		for idx in np.arange(1, len(melody)):
+		# replace original melody note with proposed note
+		intervals = extract_utils.get_intervals(melody)
 
-			note_1_melody = melody[idx - 1]
-
-			if note_1_melody.isRest:
-				note_1_melody = data_utils.closest_note_not_rest(melody, idx, np.subtract)
-
-			note_2_melody = melody[idx]
-
-			if note_2_melody.isRest:
-				note_2_melody = data_utils.closest_note_not_rest(melody, idx, np.add)
-
-			if note_1_melody.isRest or note_2_melody.isRest:
-				melody_jump = np.nan
-			else:
-				melody_jump = interval.notesToChromatic(note_1_melody, note_2_melody).semitones
-
-			jumps[idx - 1] = melody_jump**2
-
-		return np.nansum(jumps) / (len(melody)-1)
+		return (1/len(intervals))*(np.nansum(intervals**2))
 
 
 class ContraryMotion(FitnessFunction):
@@ -419,10 +364,6 @@ class ContraryMotion(FitnessFunction):
 			concordance_table : 2x2 pandas.DataFrame
 		"""
 
-		# get flattened parts
-		p1 = melody.flat.getElementsByClass([note.Note, note.Rest]).flat
-		p2 = bass.flat.getElementsByClass([note.Note, note.Rest]).flat
-
 		# set up DataFrame to produce table
 		arr = np.zeros((2,2))
 		idx = ['Up - Bass', 'Down - Bass']
@@ -430,44 +371,21 @@ class ContraryMotion(FitnessFunction):
 		concordance_tbl = pd.DataFrame(arr, index=idx, columns=cols)
 
 		# loop through intervals and fill in concordance table
-		for idx in np.arange(1, len(p1)):
-			# directions : neg is down, pos is up
+		p1_intervals = np.empty((len(melody)-1,))
+		p2_intervals = np.empty((len(melody)-1,))
+		for idx in np.arange(0, len(melody)-1):
+			p1_intervals[idx] = interval.notesToChromatic(melody[idx], melody[idx+1]).semitones
+			p2_intervals[idx] = interval.notesToChromatic(bass[idx], bass[idx+1]).semitones
 
-			# if rest in melody
-			p1_from = melody[idx - 1]
+		p1_dir_arr = np.sign(p1_intervals)
+		p2_dir_arr = np.sign(p2_intervals)
 
-			if p1_from.isRest:
-				p1_from = data_utils.closest_note_not_rest(melody, idx, np.subtract)
-
-			p1_to = melody[idx]
-
-			if p1_to.isRest:
-				p1_to = data_utils.closest_note_not_rest(melody, idx, np.add)
-
-			# if rest in bass
-			p2_from = bass[idx - 1]
-
-			if p2_from.isRest:
-				p2_from = data_utils.closest_note_not_rest(bass, idx, np.subtract)
-
-			p2_to = bass[idx]
-
-			if p2_to.isRest:
-				p2_to = data_utils.closest_note_not_rest(bass, idx, np.add)
-
-			# if begins or ends on a rest
-			if p1_to.isRest or p2_to.isRest or p1_from.isRest or p2_from.isRest:
-				dir_p1 = np.nan
-				dir_p2 = np.nan
-			else:
-				dir_p1 = np.sign(interval.notesToChromatic(p1_from, p1_to).semitones)
-				dir_p2 = np.sign(interval.notesToChromatic(p2_from, p2_to).semitones)
-
+		for i in np.arange(0, len(melody)-1):
+			dir_p1 = p1_dir_arr[i]
+			dir_p2 = p2_dir_arr[i]
 			# zero in either part should be assigned to either
 			# contrary equally
-			if np.isnan(dir_p1) or np.isnan(dir_p2):
-				continue
-			elif (dir_p1 == 0) or (dir_p2 == 0):
+			if (dir_p1 == 0) or (dir_p2 == 0):
 				rw = np.random.randint(0,2)
 				if rw == 1:
 					cl = 0
@@ -567,8 +485,8 @@ class ContraryMotion(FitnessFunction):
 		return chi2.cdf(mcnemar_stat, df=1)
     
 	def ff(self, mh, note_, index_):
-		melody = mh.melody.flat.getElementsByClass([note.Note, note.Rest]).flat
-		bass = mh.bassline.flat.getElementsByClass([note.Note, note.Rest]).flat
+		melody = list(mh.melody.recurse(classFilter=('Note', 'Rest')))
+		bass = list(mh.bassline.recurse(classFilter=('Note', 'Rest')))
 
 		melody[index_] = copy.deepcopy(note_)
 
@@ -576,8 +494,6 @@ class ContraryMotion(FitnessFunction):
 		return self.metric_func(ct)
         
 	def profiling(self, bass, melody):
-		melody = melody.flat.getElementsByClass([note.Note, note.Rest]).flat
-		bass = bass.flat.getElementsByClass([note.Note, note.Rest]).flat
 
 		ct = self.concordance_table(melody, bass)
 		return self.metric_func(ct)
@@ -595,58 +511,5 @@ def PachetRoySopranoAlgo(chorale):
 		},
 		weight_dict={'NLJ': 10 , 'CM' : 2}
 	)
-
-
-def run_batch_profile(n_iter, mh_algo, chorales):
-	"""
-	Function to run a batch of MH algorithms and 
-	observe how the data behaves.
-
-	Parameters
-	----------
-
-		n_iter : int
-			Number of iterations to run for each chorale
-
-		mh_algo : mh.MH
-			particular mh Implementation
-
-		chorales : list of music.Scores
-
-	Returns
-	-------
-
-		Diagnostic information
-	"""
-
-	# length of list of chorales
-	n_chorales = len(chorales)
-
-	# prepare data structures for diagnostics
-	starting_fitness = np.empty((n_chorales,))
-	finishing_fitness = np.empty((n_chorales,))
-	full_fitness = np.empty((n_chorales,n_iter))
-
-
-	# row = 0
-	# col = 0
-	# fig, axs = plt.subplots(num_constr, 2, figsize=(12*num_constr, 8))
-	# loop through chorales
-	for i in trange(n_chorales):
-		
-		algo = mh_algo(chorales[i])
-
-		# run MH algo
-		meta_scores = algo.run(n_iter, True, plotting=False)
-
-		# TODO MAKE SEPARATE FOR EACH FITNESS FUNCTION
-		starting_fitness[i] = meta_scores.iloc[0,0]
-		finishing_fitness[i] = meta_scores.iloc[0,-1]
-		full_fitness[i, :] = meta_scores.mean(axis=1)
-
-	# print output
-	fig, ax = plt.subplots(1,1)
-	for j in np.arange(n_chorales):
-		ax.plot(np.arange(n_iter), full_fitness[j,:], color='blue', alpha=0.2)
 
 
