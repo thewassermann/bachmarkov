@@ -4,6 +4,63 @@ Utility functions for feature/part extraction
 
 from music21 import *
 import numpy as np
+import copy
+
+
+def flattened_to_stream(flat, bassline, out_stream):
+	"""
+	Function to take in flattened data of just notes and rests
+	and transform it into a fully fledged stream
+	"""
+
+	# loop through measures
+	note_index = 0
+	for el in bassline.recurse(skipSelf=True):
+		if el == clef.BassClef():
+			out_stream.insert(clef.TrebleClef())
+		elif isinstance(el, instrument.Instrument):
+			out_stream.insert(instrument.Soprano())
+		elif isinstance(el, (stream.Measure)):
+			# select a random index for a semitone and add to outstream
+			m = stream.Measure()
+			for measure_el in el:
+				if isinstance(measure_el, note.Note):
+					out_note = flat[note_index]
+					m.insert(measure_el.offset, out_note)
+				else:
+					m.insert(measure_el.offset, note.Rest(quarterLength=1))
+				note_index += 1
+			out_stream.insert(el.offset, m)
+		elif isinstance (el, (note.Note, note.Rest)):
+			continue
+		else:
+			out_stream.insert(el.offset, copy.deepcopy(el))
+
+	return out_stream
+
+
+def get_intervals(part_list):
+	"""
+	Function to get intervals between notes in parts
+
+	Parameters
+	----------
+
+		part_list : list of music21.note.Note and music21.note.Rest
+	"""
+    
+	no_rests = [x for x in part_list if not x.isRest]
+	out_stream = np.empty((len(no_rests),))
+	for i, el in enumerate(no_rests):
+        
+        # first entry has no interval
+		if i == 0:
+			out_stream[i] = 0
+		else:
+			prev = no_rests[i-1]
+			out_stream[i] = interval.notesToChromatic(prev, el).semitones
+            
+	return out_stream
 
 
 def to_crotchet_stream(part, chord_flag=False):
