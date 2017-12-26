@@ -39,7 +39,7 @@ def flattened_to_stream(flat, bassline, out_stream):
 	return out_stream
 
 
-def get_intervals(part_list):
+def get_intervals(part_list, start_ix=None, end_ix=None):
 	"""
 	Function to get intervals between notes in parts
 
@@ -59,8 +59,13 @@ def get_intervals(part_list):
 		else:
 			prev = no_rests[i-1]
 			out_stream[i] = interval.notesToChromatic(prev, el).semitones
-            
-	return out_stream
+
+	if (start_ix is None) and (end_ix is None):
+		return out_stream
+	elif (start_ix is not None) and (end_ix is not None):
+		return out_stream[start_ix:end_ix]
+	else:
+		print('Specify both start and end')
 
 
 def to_crotchet_stream(part, chord_flag=False):
