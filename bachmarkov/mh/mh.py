@@ -166,35 +166,37 @@ class MH():
 		"""
 
 		# select random note from chord
-		if isinstance(self.chords[index_], int):
+		if self.chords[index_] == -1:
 			semitones_above_tonic = self.chords[index_]
+			return note.Rest(quarterLength=1)
+
 		else:
 			possible_notes = self.chords[index_].split('/')
 			select_idx = np.random.randint(len(possible_notes))
 			semitones_above_tonic = int(possible_notes[select_idx])
-		
-		# return note
-		tonic = self.key.getTonic()
-		pitch_ = tonic.transpose(semitones_above_tonic)
+			
+			# return note
+			tonic = self.key.getTonic()
+			pitch_ = tonic.transpose(semitones_above_tonic)
 
-		# select random obctave within vocal range
-		low, high = self.vocal_range
+			# select random obctave within vocal range
+			low, high = self.vocal_range
 
-		#lowest octave
-		lowest_oct = pitch_.transposeAboveTarget(low).octave
+			#lowest octave
+			lowest_oct = pitch_.transposeAboveTarget(low).octave
 
-		# highest octave
-		highest_oct = pitch_.transposeBelowTarget(high).octave
+			# highest octave
+			highest_oct = pitch_.transposeBelowTarget(high).octave
 
-		# bug sometimes arises where low higher than high
-		if lowest_oct >= highest_oct:
-			lowest_oct =low.octave
+			# bug sometimes arises where low higher than high
+			if lowest_oct >= highest_oct:
+				lowest_oct = low.octave
 
-		# highest + 1 as numpy.random.randint is exclusive of high 
-		oct_ = np.random.randint(low=lowest_oct, high=highest_oct + 1)
-		pitch_.octave = oct_
+			# highest + 1 as numpy.random.randint is exclusive of high 
+			oct_ = np.random.randint(low=lowest_oct, high=highest_oct + 1)
+			pitch_.octave = oct_
 
-		return note.Note(pitch_)
+			return note.Note(pitch_, quarterLength=1)
 
     
 	def run(self, n_iter, profiling, plotting=True):
@@ -256,7 +258,7 @@ class MH():
 
 		# return to melody format
 		out_stream = stream.Stream()
-		out_stream = extract_utils.flattened_to_stream(stream_notes, self.bassline, out_stream)
+		out_stream = extract_utils.flattened_to_stream(stream_notes, self.bassline, out_stream, 'Soprano')
 		
 		if plotting:
 			if len(profile_df.columns) == 1:

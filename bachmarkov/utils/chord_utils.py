@@ -66,7 +66,7 @@ def degrees_on_beats(chorale):
 	outstream = stream.Stream()
 
 	# chordify the chorale
-	cc = chorale.chordify()
+	cc = chorale.chordify() # <- will be replaced by predicted chords
 
 	outstream = extract_utils.to_crotchet_stream(cc, chord_flag=True)
     
@@ -82,3 +82,45 @@ def degrees_on_beats(chorale):
 		rn_outstream.append(bc)
     
 	return rn_outstream
+
+
+def random_note_in_chord_and_vocal_range(relPitchList, key, vocal_range):
+	"""
+	Function to return a random note in the chord within a given range
+	"""
+
+	# extract_range
+	lowest_note, highest_note = vocal_range
+
+	# turn relative Pitch into a note.Note
+	notes = [] 
+	for relPitch in relPitchList:
+		if relPitch != 0:
+			interval_ = interval.ChromaticInterval(relPitch)
+			notes.append(note.Note(interval_.transposePitch(key.getTonic()), quarterLength=1))
+		else:
+			# needed as no transposition by 0 possible
+			notes.append(note.Note(key.getTonic(), quarterLength=1))
+	        
+	# get all notes in right octave
+	octave_corrected_notes = []
+	for n in notes:
+
+		# possible octaves
+		low_octave = n.pitch.transposeAboveTarget(lowest_note).octave
+		high_octave = n.pitch.transposeBelowTarget(highest_note).octave
+        
+		# select random octave
+		# if only one choice available
+		if low_octave == high_octave + 1:
+			n.octave = low_octave
+		else:
+			octave_choice = np.arange(low_octave, high_octave + 1)
+			selected_octave = np.random.choice(octave_choice)
+
+			# set octave
+			n.octave = selected_octave
+        
+		octave_corrected_notes.append(n)
+        
+	return octave_corrected_notes

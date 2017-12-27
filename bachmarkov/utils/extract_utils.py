@@ -7,7 +7,7 @@ import numpy as np
 import copy
 
 
-def flattened_to_stream(flat, bassline, out_stream):
+def flattened_to_stream(flat, bassline, out_stream, part_):
 	"""
 	Function to take in flattened data of just notes and rests
 	and transform it into a fully fledged stream
@@ -17,9 +17,17 @@ def flattened_to_stream(flat, bassline, out_stream):
 	note_index = 0
 	for el in bassline.recurse(skipSelf=True):
 		if el == clef.BassClef():
-			out_stream.insert(clef.TrebleClef())
+			if (part_ == 'Soprano') or (part_ == 'Alto'):
+				out_stream.insert(clef.TrebleClef())
+			else:
+				out_stream.insert(clef.Treble8vbClef())
 		elif isinstance(el, instrument.Instrument):
-			out_stream.insert(instrument.Soprano())
+			if part_ == 'Soprano':
+				out_stream.insert(instrument.Soprano())
+			elif part_ == 'Alto':
+				out_stream.insert(instrument.Alto())
+			elif part_ == 'Tenor':
+				out_stream.insert(instrument.Tenor())
 		elif isinstance(el, (stream.Measure)):
 			# select a random index for a semitone and add to outstream
 			m = stream.Measure()
@@ -101,7 +109,7 @@ def to_crotchet_stream(part, chord_flag=False):
 
 					if not chord_flag:
                     
-						if isinstance(measure_item, (chord.Chord, note.Note)):
+						if isinstance(measure_item, (chord.Chord, note.Note, note.Rest)):
 							# check offset and beat number
 							offset = measure_item.offset
 							dur = measure_item.duration.quarterLength
@@ -132,7 +140,7 @@ def to_crotchet_stream(part, chord_flag=False):
 
 					else:
 
-						if isinstance(measure_item, (chord.Chord, note.Note)):
+						if isinstance(measure_item, (chord.Chord, note.Note, note.Rest)):
 							# check offset and beat number
 							offset = measure_item.offset
 							dur = measure_item.duration.quarterLength
@@ -206,3 +214,23 @@ def extract_bassline(chorale):
 			degree_outstream.append(degree)
     
 	return degree_outstream
+
+
+def extract_notes_from_chord(chord_str):
+	"""
+	Function to retreive list of notes from chord string
+
+	e.g. `0/4/7` -> [0,4,7]
+
+	Parameters
+	----------
+
+	    chord_str : string or int (-1 for rests)
+	"""
+
+	# if rest
+	if chord_str == -1:
+		return -1
+	else:
+		return [int(x) for x in chord_str.split('/')]
+    
