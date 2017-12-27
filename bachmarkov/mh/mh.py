@@ -7,6 +7,7 @@ from  music21 import *
 import numpy as np
 import pandas as pd
 from scipy.stats import chi2
+from scipy.stats.mstats import gmean
 
 from tqdm import trange
 import matplotlib.pyplot as plt
@@ -14,6 +15,7 @@ import matplotlib.pyplot as plt
 import copy
 
 from utils import chord_utils, extract_utils, data_utils
+
 
 class MH():
 	"""
@@ -31,7 +33,7 @@ class MH():
 		self.key = chorale.analyze('key')
 		self.fitness_function_dict = fitness_function_dict
 		self.weight_dict = weight_dict
-
+		self.chorale = chorale
 		# initialize melody at start of algo
 		self.melody = self.init_melody()
 
@@ -103,7 +105,7 @@ class MH():
 		return out_stream
 
 
-	def show_melody_bass(self):
+	def show_melody_bass(self, show_command=None):
 		"""
 		Function to show melody and bassline together
 		on a single system
@@ -115,7 +117,7 @@ class MH():
 		s = stream.Score()
 		s.insert(0, stream.Part(melody))
 		s.insert(0, stream.Part(bass))
-		s.show()
+		s.show(show_command)
 
 
 	def meta_fitness(self, note_, index_):
@@ -155,9 +157,9 @@ class MH():
 
 		# weighted average
 		if self.weight_dict is not None:
-			return np.nanmean([self.weight_dict[k] * scores[k] for k in scores.keys()])
+			return gmean([self.weight_dict[k] * scores[k] for k in scores.keys()])
 		else:
-			return np.nanmean(list(scores.values()))
+			return gmean(list(scores.values()))
 
 
 	def random_note_in_chord(self, index_):
@@ -275,7 +277,7 @@ class MH():
 				ax_fit.plot(np.arange(n_iter), profiling_fits, color='red')
 				ax_fit.set_xlabel('N iterations')
 				ax_fit.set_ylabel('Fitness')
-				ax_fit.set_ylim([0,1])
+				ax_fit.set_ylim([0,10])
 				ax_fit.set_title('Accepted Fitness Function')
 
 				for i in np.arange(1, len(profile_df.columns) + 1):
@@ -352,7 +354,7 @@ class NoLargeJumps(FitnessFunction):
 			e = index_ + 1
 
 		intervals = extract_utils.get_intervals(melody, s, e)
-		return ((1/len(intervals))*(np.nansum((intervals+0.01)**2)))**-1
+		return ((1/len(intervals))*(np.nansum((intervals+0.001)**2)))**-1
 
 
 	def profiling(self, mh, bass, melody):
@@ -360,7 +362,7 @@ class NoLargeJumps(FitnessFunction):
 		# replace original melody note with proposed note
 		intervals = extract_utils.get_intervals(melody)
 
-		return (1/len(intervals))*(np.nansum((intervals+0.01)**2))
+		return (1/len(intervals))*(np.nansum((intervals+0.001)**2))
 
 
 class ContraryMotion(FitnessFunction):
@@ -630,6 +632,54 @@ class NoIllegalJumps(FitnessFunction):
 				out_stream.append(interval.Interval(prev, el).name[0])
 
 		return (out_stream.count('a') + out_stream.count('d')) / len(out_stream)
+
+
+class NoConsecutiveIntervals(FitnessFunction):
+	"""
+	Function to remove consecutive intervals.
+
+	To be used with octaves and fifths
+	"""
+    
+	def __init__(self, name, prohibited_interval_list):
+		self.name = name
+		self.prohibited_interval_set = set(prohibited_interval_list)
+
+	def ff(self, mh, note_, index_):
+
+		# first indices cant be consecutive
+		if index_ == 0 or index_ == 1:
+			return 1.
+		else:
+
+			# get intervals 
+			melody = list(mh.melody.recurse(classFilter=('Note', 'Rest')))
+			bass = list(mh.bassline.recurse(classFilter=('Note', 'Rest')))
+			melody_intervals = [i % 12 for i in extract_utils.get_intervals(melody, index_ - 2, index_)]
+			bass_intervals = [i % 12 for i in extract_utils.get_intervals(bass, index_ - 2, index_)]
+
+            # if intervals between intervals are identical
+			between_intervals = (np.array(melody_intervals) - np.array(bass_intervals))
+			if (between_intervals[0] == between_intervals[1]) and \
+				(between_intervals[1] in self.prohibited_interval_set):
+				return 0.001
+			else:
+				return 1.
+
+	def profiling(self, mh, bass, melody):
+		melody_intervals = [i % 12 for i in extract_utils.get_intervals(melody)]
+		bass_intervals = [i % 12 for i in extract_utils.get_intervals(bass)]
+
+		# fifths and octaves
+		prohibited_interval_set = set([-5, 0, 7])
+
+		consecutive_count = 0
+		between_intervals = np.array(melody_intervals) - np.array(bass_intervals)
+		for i in np.arange(1, len(melody)-1):
+			if (between_intervals[i] == between_intervals[i-1]) and \
+				(between_intervals[i-1] in prohibited_interval_set):
+					consecutive_count += 1
+		return consecutive_count / len(between_intervals)
         
 
 ##### IMPLEMENTATIONS
@@ -654,9 +704,9 @@ def TsangAikenAlgo(chorale):
 			'CM' : ContraryMotion('CM', 'agreement_proportion'),
 			'NTT' : NotesToTonic('NTT'),
 			'NIJ' : NoIllegalJumps('NIJ'),
-			'NCI' : NoConsecutiveIntervals('NCI', [-7, -5, 0, 5, 7])
+			'NCI' : NoConsecutiveIntervals('NCI', [-5, 0, 7])
 		},
-		weight_dict={'NLJ': 1 , 'CM' : 10, 'NTT' : 0, 'NIJ' : 100, 'NCI' : 100}
+		weight_dict={'NLJ': 3 , 'CM' : 10, 'NTT' : 1, 'NIJ' : 100, 'NCI' : 200}
 	)
 
 
