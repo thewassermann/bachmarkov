@@ -112,10 +112,10 @@ def random_note_in_chord_and_vocal_range(relPitchList, key, vocal_range):
         
 		# select random octave
 		# if only one choice available
-		if low_octave == high_octave + 1:
+		if low_octave >= high_octave:
 			n.octave = low_octave
 		else:
-			octave_choice = np.arange(low_octave, high_octave + 1)
+			octave_choice = np.arange(low_octave, high_octave)
 			selected_octave = np.random.choice(octave_choice)
 
 			# set octave

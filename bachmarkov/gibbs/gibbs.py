@@ -109,17 +109,26 @@ class GibbsSampler():
 		return out_stream
     
     
-	def show_chorale(self):
+	def return_chorale(self):
 		"""
-		Print the chorale in its current form 
+		Return the chorale in its current form as a score
 		"""
 		# conjoin two parts and shows
 		s = stream.Score()
-		s.insert(0, stream.Part(self.soprano))
-		s.insert(0, stream.Part(self.alto))
-		s.insert(0, stream.Part(self.tenor))
-		s.insert(0, stream.Part(self.bass))
-		s.show()
+		soprano = stream.Part(self.soprano)
+		soprano.id = 'Soprano'
+		alto = stream.Part(self.alto)
+		alto.id = 'Alto'
+		tenor = stream.Part(self.tenor)
+		tenor.id = 'Tenor'
+		bass = stream.Part(self.bass)
+		bass.id = 'Bass'
+
+		s.insert(0, soprano)
+		s.insert(0, alto)
+		s.insert(0, tenor)
+		s.insert(0, bass)
+		return s
 
 
 	def run(self, n_iter):
@@ -161,7 +170,7 @@ class GibbsSampler():
 				self.tenor = extract_utils.flattened_to_stream(sample_flat, self.bass, out_stream, name_)
 
 		# display results
-		self.show_chorale()
+		return self.return_chorale()
 
 	def meta_conditional(self, part_name, sample_line, sample_idx, sample_range):
 
@@ -194,29 +203,46 @@ class GibbsSampler():
 			notes_with_octaves = {}
 			for oct_ in possible_octaves:
 				for note_ in notes:
-					in_note = note.Note(note_.pitch, quarterLength=1)
-					in_note.octave = oct_
-					notes_with_octaves[in_note.nameWithOctave] = in_note
+					pitch_ = note_.pitch
+					pitch_.octave = oct_
+					in_note = note.Note(pitch_, quarterLength=1)
+					if (in_note.pitch <= highest_note) and (in_note.pitch >= lowest_note):
+						notes_with_octaves[in_note.nameWithOctave] = in_note
 
 			# conditional probability of each possible note
 			prob_dist = {}
 			for possible_note in list(notes_with_octaves.keys()):
 
 				# score for each note
-				score = 0
+				score = 1
 
 				# loop through conditional probabilities
 				for cd in list(self.conditional_dict.keys()):
 					if self.weight_dict is None:
-						score += self.conditional_dict[cd].dist(self, possible_note)
+						score *= self.conditional_dict[cd].dist(
+							self,
+							possible_note,
+							part_name,
+							sample_line,
+							sample_idx,
+							sample_range
+						)**(-len(list(self.conditional_dict.keys())))
 					else:
-						score += self.conditional_dict[cd].dist(self, possible_note) * weight_dict[cd]
+						score *= (self.conditional_dict[cd].dist(
+							self,
+							possible_note,
+							part_name,
+							sample_line,
+							sample_idx,
+							sample_range
+						) * self.weight_dict[cd])**(-len(list(self.conditional_dict.keys())))
+
 					prob_dist[possible_note] = score
 
 			score_sum = np.nansum(list(prob_dist.values()))
 			prob_dist = {k: prob_dist[k]/score_sum for k in list(prob_dist.keys())}
 			chosen_name = np.random.choice(list(prob_dist.keys()), p=list(prob_dist.values()))
-			return notes_with_octaves[chosen_name]
+			return note.Note(chosen_name, quarterLength=1)
 
 
 class ConditionalDistribution():
@@ -226,10 +252,145 @@ class ConditionalDistribution():
 	def __init__(self, name):
 		self.name = name
 
-	def dist(self, possible_note):
+	def dist(self, gs, possible_note, part_name, sample_line, sample_idx, sample_range):
 		pass
 
 
-class TestDist(ConditionalDistribution):
-	def dist(self, gs, possible_note):
-		return 1
+class NoCrossing(ConditionalDistribution):
+
+	def dist(self, gs, possible_note, part_name, sample_line, sample_idx, sample_range):
+		"""
+		No crossing between individual parts
+		"""
+		soprano = gs.soprano.recurse(classFilter=('Note', 'Rest'))
+		alto = gs.alto.recurse(classFilter=('Note', 'Rest'))
+		tenor = gs.tenor.recurse(classFilter=('Note', 'Rest'))
+		bass = gs.bass.recurse(classFilter=('Note', 'Rest'))
+        
+		# convert to list for assignment
+		sample_range = list(sample_range)
+
+		# alter sample range to fit in with the no-crossing policy
+		if gs.chords[sample_idx] == -1:
+			# can only be a rest
+			if isinstance(possible_note, note.Rest):
+				return 1.
+			else:
+				return .001
+		else:
+			if part_name == 'Alto':
+				if soprano[sample_idx].pitch < sample_range[1]:
+					sample_range[1] = soprano[sample_idx].pitch
+				if tenor[sample_idx].pitch > sample_range[0]:
+					sample_range[0] = tenor[sample_idx].pitch
+			elif part_name == 'Tenor':
+				if alto[sample_idx].pitch < sample_range[1]:
+					sample_range[1] = alto[sample_idx].pitch
+				if bass[sample_idx].pitch > sample_range[0]:
+					sample_range[0] = bass[sample_idx].pitch
+			    
+			# if surrounding parts already crossed each note equally suggested
+			if sample_range[1] <= sample_range[0]:
+				return 1. 
+			else:
+				if (pitch.Pitch(possible_note) < sample_range[1]) and \
+					(pitch.Pitch(possible_note) > sample_range[0]):
+					return 1.
+				else:
+					return 0.001
+
+
+class StepWiseMotion(ConditionalDistribution):
+
+	def dist(self, gs, possible_note, part_name, sample_line, sample_idx, sample_range):
+		"""
+		Prefer smaller steps to larger ones
+		"""
+		sample_line = sample_line.recurse(classFilter=('Note', 'Rest'))
+        
+		# if last index just look to previous note
+		if sample_idx == len(sample_line) - 1:
+			s = -3
+			e = -1
+
+		# if the first index just look to next note
+		elif sample_idx == 0:
+			s = 0
+			e = 2
+		else:
+			s = sample_idx - 1
+			e = sample_idx + 1
+
+		intervals = extract_utils.get_intervals(sample_line, s, e)
+		intervals = [1. if i == 0 else i for i in intervals]
+		return ((intervals[0]**2) + (intervals[1]**2))**-1
+
+
+class NoParallelMotion(ConditionalDistribution):
+
+	def dist(self, gs, possible_note, part_name, sample_line, sample_idx, sample_range):
+		"""
+		Discourage (heavily) any parallel motion in 5ths or octaves
+		"""
+
+		sample_line = sample_line.recurse(classFilter=('Note', 'Rest'))
+		soprano = gs.soprano.recurse(classFilter=('Note', 'Rest'))
+		alto = gs.alto.recurse(classFilter=('Note', 'Rest'))
+		tenor = gs.tenor.recurse(classFilter=('Note', 'Rest'))
+		bass = gs.bass.recurse(classFilter=('Note', 'Rest'))
+
+		# if first index parallel motion impossible
+		if sample_idx == 0:
+			return 1. 
+		else:
+			# make list of other parts to check
+			other_parts = []
+			if part_name == 'Alto':
+				other_parts = [soprano, tenor, bass]
+			elif part_name == 'Tenor':
+				other_parts = [soprano, alto, bass]
+
+			# loop through
+			for part_ in other_parts:
+				if (gs.chords[sample_idx-1] == -1) or (gs.chords[sample_idx] == -1):
+					return 1.
+				else:
+					prev_interval = interval.notesToChromatic(sample_line[sample_idx - 1], part_[sample_idx - 1]).semitones % 12
+					interval_ = interval.notesToChromatic(sample_line[sample_idx], part_[sample_idx]).semitones % 12
+
+					if (prev_interval == interval_) and (interval in set([-5, 0, 7])):
+						return 0.001
+
+			# if at this point there is no parallel motion
+			return 1.
+
+
+class OctaveMax(ConditionalDistribution):
+
+	def dist(self, gs, possible_note, part_name, sample_line, sample_idx, sample_range):
+		"""
+		Between soprano, alto, tenor lines do not want more than an octave between each
+		"""
+
+		sample_line = sample_line.recurse(classFilter=('Note', 'Rest'))
+		soprano = gs.soprano.recurse(classFilter=('Note', 'Rest'))
+		alto = gs.alto.recurse(classFilter=('Note', 'Rest'))
+		tenor = gs.tenor.recurse(classFilter=('Note', 'Rest'))
+
+		# make list of other parts to check
+		other_parts = []
+		if part_name == 'Alto':
+			other_parts = [soprano, tenor]
+		elif part_name == 'Tenor':
+			other_parts = [soprano, alto]
+
+		for part_ in other_parts:
+			if (gs.chords[sample_idx-1] == -1) or (gs.chords[sample_idx] == -1):
+				return 1.
+			else:
+				interval_ = interval.notesToChromatic(sample_line[sample_idx], part_[sample_idx]).semitones
+				if interval_ > 12:
+					return 0.001
+
+		# if at this point they are clustered within two octaves
+		return 1.

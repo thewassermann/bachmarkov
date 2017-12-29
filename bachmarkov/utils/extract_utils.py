@@ -123,7 +123,7 @@ def to_crotchet_stream(part, chord_flag=False):
 	                            
 	                        # on beat note, more than one beat
 							elif offset.is_integer() and dur > 1.:
-								for cnt in np.arange(np.floor(dur)):
+								for cnt in np.arange(np.ceil(dur)):
 									if isinstance(measure_item, (note.Rest)):
 										m.insert(offset + cnt, note.Rest(quarterLength=1))
 									else:
@@ -132,7 +132,7 @@ def to_crotchet_stream(part, chord_flag=False):
 	                        # on non-beat note, not covering beat -> skip
 	                        # on non-beat note, covering beat
 							elif dur >= 1.:
-								for cnt in np.arange(np.floor(dur)):
+								for cnt in np.arange(np.ceil(dur)):
 									if isinstance(measure_item, (note.Rest)):
 										m.insert(np.ceil(offset) + cnt, note.Rest(quarterLength=1))
 									else:
@@ -154,7 +154,7 @@ def to_crotchet_stream(part, chord_flag=False):
 	                            
 	                        # on beat note, more than one beat
 							elif offset.is_integer() and dur > 1.:
-								for cnt in np.arange(np.floor(dur)):
+								for cnt in np.arange(np.ceil(dur)):
 									if isinstance(measure_item, (note.Rest)):
 										m.insert(offset + cnt, note.Rest(quarterLength=1))
 									else:
@@ -163,7 +163,7 @@ def to_crotchet_stream(part, chord_flag=False):
 	                        # on non-beat note, not covering beat -> skip
 	                        # on non-beat note, covering beat
 							elif dur >= 1.:
-								for cnt in np.arange(np.floor(dur)):
+								for cnt in np.arange(np.ceil(dur)):
 									if isinstance(measure_item, (note.Rest)):
 										m.insert(np.ceil(offset) + cnt, note.Rest(quarterLength=1))
 									else:

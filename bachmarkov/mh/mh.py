@@ -345,7 +345,7 @@ class NoLargeJumps(FitnessFunction):
 		# replace original melody note with proposed note
 		melody[index_] = copy.deepcopy(note_)
 
-		if index_ == len(melody):
+		if index_ == len(melody) - 1:
 			s = -3
 			e = -1
 		elif index_ == 0:
