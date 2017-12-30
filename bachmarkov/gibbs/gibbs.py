@@ -198,7 +198,7 @@ class GibbsSampler():
 			# only possible octaves are the ones in the range
 			low_octave = lowest_note.octave
 			high_octave = highest_note.octave
-			possible_octaves = set([low_octave, high_octave])
+			possible_octaves = set(np.arange(low_octave, high_octave+1))
 
 			notes_with_octaves = {}
 			for oct_ in possible_octaves:

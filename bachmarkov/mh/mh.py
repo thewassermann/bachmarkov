@@ -26,9 +26,13 @@ class MH():
 	from this class
 	"""
 
-	def __init__(self, chorale, vocal_range, fitness_function_dict, weight_dict=None):
+	def __init__(self, chorale, vocal_range, fitness_function_dict, prop_chords=None, weight_dict=None):
 		self.bassline = extract_utils.to_crotchet_stream(chorale.parts['Bass'])
-		self.chords = chord_utils.degrees_on_beats(chorale) 
+
+		if prop_chords is not None:
+			self.chords = prop_chords
+		else:
+			self.chords = chord_utils.degrees_on_beats(chorale) 
 		self.vocal_range = vocal_range
 		self.key = chorale.analyze('key')
 		self.fitness_function_dict = fitness_function_dict
@@ -403,9 +407,13 @@ class ContraryMotion(FitnessFunction):
 		p1_intervals = np.empty((len(melody)-1,))
 		p2_intervals = np.empty((len(melody)-1,))
 		for idx in np.arange(0, len(melody)-1):
-			p1_intervals[idx] = interval.notesToChromatic(melody[idx], melody[idx+1]).semitones
-			p2_intervals[idx] = interval.notesToChromatic(bass[idx], bass[idx+1]).semitones
 
+			# skip if rest
+			if isinstance(melody[idx], note.Rest) or isinstance(melody[idx+1], note.Rest):
+				continue
+			else:
+				p1_intervals[idx] = interval.notesToChromatic(melody[idx], melody[idx+1]).semitones
+				p2_intervals[idx] = interval.notesToChromatic(bass[idx], bass[idx+1]).semitones
 		p1_dir_arr = np.sign(p1_intervals)
 		p2_dir_arr = np.sign(p2_intervals)
 
@@ -662,22 +670,30 @@ class NoConsecutiveIntervals(FitnessFunction):
 
             # if intervals between intervals are identical
 			between_intervals = (np.array(melody_intervals) - np.array(bass_intervals))
-			if (between_intervals[0] == between_intervals[1]) and \
+			if len(between_intervals) == 1:
+				return 1.
+			elif (between_intervals[0] == between_intervals[1]) and \
 				(between_intervals[1] in self.prohibited_interval_set):
 				return 0.001
 			else:
 				return 1.
 
 	def profiling(self, mh, bass, melody):
+
+		# remove rests
+		melody = [x for x in melody if not x.isRest]
+		bass = [x for x in bass if not x.isRest]
+
 		melody_intervals = [i % 12 for i in extract_utils.get_intervals(melody)]
 		bass_intervals = [i % 12 for i in extract_utils.get_intervals(bass)]
+
 
 		# fifths and octaves
 		prohibited_interval_set = set([-5, 0, 7])
 
 		consecutive_count = 0
 		between_intervals = np.array(melody_intervals) - np.array(bass_intervals)
-		for i in np.arange(1, len(melody)-1):
+		for i in np.arange(1, len(between_intervals)):
 			if (between_intervals[i] == between_intervals[i-1]) and \
 				(between_intervals[i-1] in prohibited_interval_set):
 					consecutive_count += 1
@@ -697,7 +713,7 @@ def PachetRoySopranoAlgo(chorale):
 		weight_dict={'NLJ': 10 , 'CM' : 2}
 	)
 
-def TsangAikenAlgo(chorale):
+def TsangAikenAlgo(chorale, prop_chords):
 	return MH(
 		chorale,
 		(pitch.Pitch('c4'), pitch.Pitch('g5')),
@@ -708,7 +724,8 @@ def TsangAikenAlgo(chorale):
 			'NIJ' : NoIllegalJumps('NIJ'),
 			'NCI' : NoConsecutiveIntervals('NCI', [-5, 0, 7])
 		},
-		weight_dict={'NLJ': 3 , 'CM' : 10, 'NTT' : 1, 'NIJ' : 100, 'NCI' : 200}
+		prop_chords=prop_chords,
+		weight_dict={'NLJ': 20 , 'CM' : 10, 'NTT' : 1, 'NIJ' : 100, 'NCI' : 200}
 	)
 
 
