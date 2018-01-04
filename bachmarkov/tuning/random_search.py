@@ -2,6 +2,7 @@ import bachmarkov
 from utils import chord_utils, extract_utils, data_utils
 from hmm import hmm
 from mh import mh
+from gibbs import gibbs
 import importlib
 import networkx as nx
 import numpy as np
@@ -30,10 +31,14 @@ class RandomSearch():
         else:
             self.function_dict = model.conditional_dict
 
+        self.model_type = model_type
+
         # ge list of test chorales
         self.test_chorales = test_chorales
         self.weight_dict = self.init_weight_dict()
-        self.vocal_range = model.vocal_range
+
+        if model_type == 'MH':
+            self.vocal_range = model.vocal_range
     
     def init_weight_dict(self):
         return {k : 0 for k in list(self.function_dict.keys())}
@@ -66,16 +71,35 @@ class RandomSearch():
             # loop through each chorale
             for j in np.arange(len(self.test_chorales)):
             
-                model_ = mh.MH(
-                    self.test_chorales[j],
-                    self.vocal_range,
-                    self.function_dict,
-                    weight_dict=self.weight_dict,
-                    prop_chords = None,
-                )
+                if self.model_type == 'MH':
+                    model_ = mh.MH(
+                        self.test_chorales[j],
+                        self.vocal_range,
+                        self.function_dict,
+                        weight_dict=self.weight_dict,
+                        prop_chords = None,
+                    )
+                else:
+                    model_ = gibbs.GibbsSampler(
+                        self.test_chorales[j],
+                        extract_utils.to_crotchet_stream(self.test_chorales[j].parts['Soprano']),
+                        extract_utils.to_crotchet_stream(self.test_chorales[j].parts['Bass']),
+                        chord_utils.degrees_on_beats(self.test_chorales[j]),
+                        vocal_range_dict={
+                            'Alto' : (pitch.Pitch('g3'), pitch.Pitch('c5')),
+                            'Tenor' : (pitch.Pitch('c3'), pitch.Pitch('e4')), 
+                        },
+                        conditional_dict={
+                            'NC' : gibbs.NoCrossing('NC'),
+                            'SWM' : gibbs.StepWiseMotion('SWM'),
+                            'NPM' : gibbs.NoParallelMotion('NPM'),
+                            'OM' : gibbs.OctaveMax('OM')
+                        },
+                    )
                 
                 cd = convergence_diagnostics.ConvergenceDiagnostics(
                     model_,
+                    self.model_type,
                     run_length,
                     'Tsang Aitken',
                     int(run_length / 2),

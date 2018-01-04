@@ -20,12 +20,16 @@ class GibbsSampler():
 
 	def __init__(
 		self,
+		chorale,
 		soprano,
 		bass,
 		chords,
 		vocal_range_dict,
 		conditional_dict,
 		weight_dict=None):
+
+		# will remove later
+		self.chorale = chorale
 
 		self.soprano = soprano
 		self.bass = bass
@@ -131,7 +135,7 @@ class GibbsSampler():
 		return s
 
 
-	def run(self, n_iter):
+	def run(self, n_iter, profiling, plotting=True):
 		"""
 		Run the gibbs sampler for `n_iter` iterations
 
@@ -142,7 +146,19 @@ class GibbsSampler():
 				number of iterations to run the gibbs sampler for 
 		"""
 
-		for i in trange(n_iter):
+		# to store profiled data
+		if profiling:
+			profile_arr = np.empty((n_iter, len(list(self.conditional_dict.keys()))))
+			profile_df = pd.DataFrame(profile_arr)
+			profile_df.index = np.arange(n_iter)
+			profile_df.columns = list(self.conditional_dict.keys())
+
+		if not plotting:
+			tf_show_progress = True
+		else:
+			tf_show_progress = False
+
+		for i in trange(n_iter, disable=tf_show_progress):
 			# flip a coin for alto or tenor
 			if np.random.uniform() < .5:
 				# alto
@@ -156,7 +172,7 @@ class GibbsSampler():
 				name_ = 'Tenor'
 
 			# get index for conditional distribution
-			sample_idx = np.random.choice(np.arange(len(self.soprano)))
+			sample_idx = np.random.choice(np.arange(len(self.soprano.recurse(classFilter=('Note', 'Rest')))))
 
 			chosen_note = self.meta_conditional(name_, sample_line, sample_idx, sample_range)
 			sample_flat = list(sample_line.recurse(classFilter=('Note', 'Rest')))
@@ -169,8 +185,52 @@ class GibbsSampler():
 			else:
 				self.tenor = extract_utils.flattened_to_stream(sample_flat, self.bass, out_stream, name_)
 
+			if profiling:
+				for k in list(self.conditional_dict.keys()):
+					profile_df.loc[i, k] = self.conditional_dict[k].profiling(self)
+
+
 		# display results
-		return self.return_chorale()
+		if plotting:
+
+			# create a plot for each profile_df
+			N = len(profile_df.columns)
+			fig, axs = plt.subplots(N, 1, figsize=(10*N, 8))
+
+			for i in np.arange(N):
+				ax = np.array(axs).flatten()[i]
+				ax.plot(profile_df.index, profile_df.iloc[:, i], color='blue')
+				ax.set_title(list(self.conditional_dict.keys())[i])
+				ax.set_xlabel('Iterations')
+				ax.set_ylabel('Profiling Score')
+
+			fig.tight_layout()
+
+		if profiling:
+			# if more than one constraint being used
+			if len(profile_df.columns) > 1:
+
+				out_arr = np.empty((n_iter,))
+
+				# if there is a weight dict collapse into a single 
+				# weighted output
+				if self.weight_dict is not None:
+
+					for i in np.arange(n_iter):
+						# get sum of weight dict so can be normalized
+						weight_sum = np.nansum(list(self.weight_dict.values()))
+						out_arr[i] = np.nansum(
+							[profile_df.loc[i, weight_key] * self.weight_dict[weight_key] for weight_key in list(self.weight_dict.keys())]
+						) / weight_sum
+				# if equal weighted can just average
+				else:
+					out_arr = np.nanmean(profile_df, axis=1)
+				out_df = pd.Series(out_arr, name='Composite Fitness')
+				return out_df
+			else:
+				return profile_df
+		else:
+			return self.return_chorale()
 
 	def meta_conditional(self, part_name, sample_line, sample_idx, sample_range):
 
@@ -214,33 +274,36 @@ class GibbsSampler():
 			for possible_note in list(notes_with_octaves.keys()):
 
 				# score for each note
-				score = 1
+				score = 0
 
 				# loop through conditional probabilities
 				for cd in list(self.conditional_dict.keys()):
 					if self.weight_dict is None:
-						score *= self.conditional_dict[cd].dist(
+						score += self.conditional_dict[cd].dist(
 							self,
 							possible_note,
 							part_name,
 							sample_line,
 							sample_idx,
 							sample_range
-						)**(-len(list(self.conditional_dict.keys())))
+						)
 					else:
-						score *= (self.conditional_dict[cd].dist(
+						score += self.conditional_dict[cd].dist(
 							self,
 							possible_note,
 							part_name,
 							sample_line,
 							sample_idx,
 							sample_range
-						) * self.weight_dict[cd])**(-len(list(self.conditional_dict.keys())))
+						)
 
 					prob_dist[possible_note] = score
 
 			score_sum = np.nansum(list(prob_dist.values()))
 			prob_dist = {k: prob_dist[k]/score_sum for k in list(prob_dist.keys())}
+			# print('Soprano Note {}'.format(self.soprano.recurse(classFilter=('Note', 'Rest'))[sample_idx].nameWithOctave))
+			# print('{} dist: {}'.format(part_name, prob_dist))
+			# print('Sample Index {}'.format(sample_idx))
 			chosen_name = np.random.choice(list(prob_dist.keys()), p=list(prob_dist.values()))
 			return note.Note(chosen_name, quarterLength=1)
 
@@ -255,6 +318,10 @@ class ConditionalDistribution():
 	def dist(self, gs, possible_note, part_name, sample_line, sample_idx, sample_range):
 		pass
 
+	def profiling(self, gs):
+		pass
+
+
 
 class NoCrossing(ConditionalDistribution):
 
@@ -268,7 +335,7 @@ class NoCrossing(ConditionalDistribution):
 		bass = gs.bass.recurse(classFilter=('Note', 'Rest'))
         
 		# convert to list for assignment
-		sample_range = list(sample_range)
+		lowest_note, highest_note = sample_range
 
 		# alter sample range to fit in with the no-crossing policy
 		if gs.chords[sample_idx] == -1:
@@ -279,34 +346,59 @@ class NoCrossing(ConditionalDistribution):
 				return .001
 		else:
 			if part_name == 'Alto':
-				if soprano[sample_idx].pitch < sample_range[1]:
-					sample_range[1] = soprano[sample_idx].pitch
-				if tenor[sample_idx].pitch > sample_range[0]:
-					sample_range[0] = tenor[sample_idx].pitch
+				if soprano[sample_idx].pitch < highest_note:
+					highest_note = soprano[sample_idx].pitch
+				if tenor[sample_idx].pitch > lowest_note:
+					lowest_note = tenor[sample_idx].pitch
 			elif part_name == 'Tenor':
-				if alto[sample_idx].pitch < sample_range[1]:
-					sample_range[1] = alto[sample_idx].pitch
-				if bass[sample_idx].pitch > sample_range[0]:
-					sample_range[0] = bass[sample_idx].pitch
+				if alto[sample_idx].pitch < highest_note:
+					highest_note = alto[sample_idx].pitch
+				if bass[sample_idx].pitch > lowest_note:
+					lowest_note = bass[sample_idx].pitch
 			    
 			# if surrounding parts already crossed each note equally suggested
-			if sample_range[1] <= sample_range[0]:
+			if highest_note < lowest_note:
 				return 1. 
 			else:
-				if (pitch.Pitch(possible_note) < sample_range[1]) and \
-					(pitch.Pitch(possible_note) > sample_range[0]):
+				if (pitch.Pitch(possible_note) < highest_note) and \
+					(pitch.Pitch(possible_note) > lowest_note):
 					return 1.
 				else:
 					return 0.001
 
+	def profiling(self, gs):
+		"""
+		See how many beats contain crossing 
+		"""
+		soprano = gs.soprano.recurse(classFilter=('Note', 'Rest'))
+		alto = gs.alto.recurse(classFilter=('Note', 'Rest'))
+		tenor = gs.tenor.recurse(classFilter=('Note', 'Rest'))
+		bass = gs.bass.recurse(classFilter=('Note', 'Rest'))
 
+		# loop through each beat and count if it contains a part 
+		# crossing
+		beats_no_crossing = 0
+
+		for i in np.arange(len(soprano)):
+
+			if soprano[i].isRest or alto[i].isRest or tenor[i].isRest or bass[i].isRest:
+				continue
+			elif (soprano[i].pitch > alto[i].pitch) and \
+				(alto[i].pitch > tenor[i].pitch) and \
+				(tenor[i].pitch > bass[i].pitch):
+					beats_no_crossing += 1
+
+		return beats_no_crossing / len(soprano)
+
+        
 class StepWiseMotion(ConditionalDistribution):
 
 	def dist(self, gs, possible_note, part_name, sample_line, sample_idx, sample_range):
 		"""
 		Prefer smaller steps to larger ones
 		"""
-		sample_line = sample_line.recurse(classFilter=('Note', 'Rest'))
+		sample_line = list(sample_line.recurse(classFilter=('Note', 'Rest')))
+		sample_line[sample_idx] = copy.deepcopy(note.Note(possible_note, quarterLength=1))
         
 		# if last index just look to previous note
 		if sample_idx == len(sample_line) - 1:
@@ -321,9 +413,35 @@ class StepWiseMotion(ConditionalDistribution):
 			s = sample_idx - 1
 			e = sample_idx + 1
 
-		intervals = extract_utils.get_intervals(sample_line, s, e)
-		intervals = [1. if i == 0 else i for i in intervals]
-		return ((intervals[0]**2) + (intervals[1]**2))**-1
+		intervals_particular = extract_utils.get_intervals(sample_line, s, e)
+		intervals_particular = [1 if i == 0 else i for i in intervals_particular]
+		intervals_particular_score = np.nansum(np.array(intervals_particular)**2)**-1.
+
+		intervals_total = extract_utils.get_intervals(sample_line)
+		intervals_total_score = np.nansum(np.array(intervals_total)**2)**-1.
+
+		return np.average([intervals_total_score, intervals_particular_score], weights=[.05, .95])
+
+	def profiling(self, gs):
+
+		alto = gs.alto.recurse(classFilter=('Note', 'Rest'))
+		tenor = gs.tenor.recurse(classFilter=('Note', 'Rest'))
+
+		# extract intervals for alto and tenor parts
+		alto_intervals = extract_utils.get_intervals(alto)
+		tenor_intervals = extract_utils.get_intervals(tenor)
+
+		jumps = 0
+		for i in np.arange(len(alto_intervals)):
+
+			# keep tally of jumps
+			if alto_intervals[i] > 4:
+				jumps += 1
+			if tenor_intervals[i] > 4:
+				jumps += 1
+
+		return jumps / (2*len(alto))
+
 
 
 class NoParallelMotion(ConditionalDistribution):
@@ -365,6 +483,35 @@ class NoParallelMotion(ConditionalDistribution):
 			return 1.
 
 
+	def profiling(self, gs):
+
+		soprano = gs.soprano.recurse(classFilter=('Note', 'Rest'))
+		alto = gs.alto.recurse(classFilter=('Note', 'Rest'))
+		tenor = gs.tenor.recurse(classFilter=('Note', 'Rest'))
+		bass = gs.bass.recurse(classFilter=('Note', 'Rest'))
+
+		soprano_intervals = extract_utils.get_intervals(soprano)
+		alto_intervals = extract_utils.get_intervals(alto)
+		tenor_intervals = extract_utils.get_intervals(tenor)
+		bass_intervals = extract_utils.get_intervals(bass)
+
+		parallel_motions = 0
+		for i in np.arange(1, len(soprano_intervals)):
+
+			soprano_motion = (soprano_intervals[i] - soprano_intervals[i-1]) % 12
+			alto_motion = (alto_intervals[i] - alto_intervals[i-1]) % 12
+			tenor_motion = (tenor_intervals[i] - tenor_intervals[i-1]) % 12
+			bass_motion = (bass_intervals[i] - bass_intervals[i-1]) % 12
+
+			motions = [soprano_motion, alto_motion, tenor_motion, bass_motion]
+
+			if (motions.count(0) > 1) or \
+				(motions.count(7) > 1):
+					parallel_motions += 1
+
+		return parallel_motions / len(soprano_intervals)
+
+
 class OctaveMax(ConditionalDistribution):
 
 	def dist(self, gs, possible_note, part_name, sample_line, sample_idx, sample_range):
@@ -394,3 +541,29 @@ class OctaveMax(ConditionalDistribution):
 
 		# if at this point they are clustered within two octaves
 		return 1.
+
+
+	def profiling(self, gs):
+
+		alto = gs.alto.recurse(classFilter=('Note', 'Rest'))
+		tenor = gs.tenor.recurse(classFilter=('Note', 'Rest'))
+
+		alto_intervals = extract_utils.get_intervals(alto)
+		tenor_intervals = extract_utils.get_intervals(tenor)
+
+		octave_jumps = 0
+		for i in np.arange(len(alto_intervals)):
+
+			if alto_intervals[i] > 12:
+				octave_jumps += 1
+
+			if tenor_intervals[i] > 12:
+				octave_jumps += 1
+
+		return octave_jumps / (2*len(alto_intervals))
+
+
+
+
+
+
