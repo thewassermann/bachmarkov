@@ -71,7 +71,11 @@ def get_intervals(part_list, start_ix=None, end_ix=None):
 	if (start_ix is None) and (end_ix is None):
 		return out_stream
 	elif (start_ix is not None) and (end_ix is not None):
-		return out_stream[start_ix:end_ix]
+		# if list is empty
+		if len(out_stream[start_ix:end_ix]) == 0:
+			return np.zeros((end_ix - start_ix))
+		else:
+			return out_stream[start_ix:end_ix]
 	else:
 		print('Specify both start and end')
 

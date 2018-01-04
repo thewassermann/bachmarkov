@@ -16,6 +16,8 @@ import copy
 
 from utils import chord_utils, extract_utils, data_utils
 
+from pandas.plotting import autocorrelation_plot
+
 
 class MH():
 	"""
@@ -85,6 +87,9 @@ class MH():
 		"""
 		out_stream = stream.Stream()
 
+		# initialize index for chord list
+		chord_idx = 0
+
 		# loop through measures
 		for el in self.bassline.recurse(skipSelf=True):
 			if el == clef.BassClef():
@@ -96,10 +101,16 @@ class MH():
 				m = stream.Measure()
 				for measure_el in el:
 					if isinstance(measure_el, note.Note):
-						out_note = self.random_note_in_range()
+						out_note_choices =  chord_utils.random_note_in_chord_and_vocal_range(
+							extract_utils.extract_notes_from_chord(self.chords[chord_idx]),
+							self.key,
+							self.vocal_range)
+						out_note = np.random.choice(out_note_choices)
 						m.insert(measure_el.offset, out_note)
+						chord_idx += 1
 					else:
 						m.insert(measure_el.offset, note.Rest(quarterLength=1))
+						chord_idx += 1
 				out_stream.insert(el.offset, m)
 			elif isinstance (el, (note.Note, note.Rest)):
 				continue
@@ -161,9 +172,9 @@ class MH():
 
 		# weighted average
 		if self.weight_dict is not None:
-			return gmean([self.weight_dict[k] * scores[k] for k in scores.keys()])
+			return np.nanmean([self.weight_dict[k] * scores[k] for k in scores.keys()])
 		else:
-			return gmean(list(scores.values()))
+			return np.nanmean(list(scores.values()))
 
 
 	def random_note_in_chord(self, index_):
@@ -233,9 +244,14 @@ class MH():
 
 		stream_choices = [x for x in np.arange(stream_length) if x not in rest_pos]
 
-		profiling_fits = np.empty((n_iter,))
-		# for a given number of iterations:
-		for i in trange(n_iter):
+		#for a given number of iterations:
+		if not plotting:
+			tf_show_progress = True
+		else:
+			tf_show_progress = False
+
+		for i in trange(n_iter, disable=tf_show_progress):
+
 
 			# select a note/chord at random (note beginning/end difficulties)
 			idx = np.random.choice(stream_choices)
@@ -253,9 +269,6 @@ class MH():
 			accept_func = (prop_fit / curr_fit)
 			if np.random.uniform() < accept_func:
 				stream_notes[idx] = prop_note
-				profiling_fits[i] = prop_fit
-			else:
-				profiling_fits[i] = curr_fit
 
 			if profiling:
 				# loop through fitness functions
@@ -271,22 +284,14 @@ class MH():
 				profile_df.plot()
 			else:
 				# plot the results
-				row_num = int(np.ceil((len(profile_df.columns) + 1) / 2))
+				row_num = int(np.ceil((len(profile_df.columns)) / 2))
 
 				# initialize row and column iterators
 				row = 0
 				col = 0
 				fig, axs = plt.subplots(row_num, 2, figsize=(12*row_num, 8))
 
-				# fit plotting
-				ax_fit = np.array(axs).reshape(-1)[0]
-				ax_fit.plot(np.arange(n_iter), profiling_fits, color='red')
-				ax_fit.set_xlabel('N iterations')
-				ax_fit.set_ylabel('Fitness')
-				ax_fit.set_ylim([0,10])
-				ax_fit.set_title('Accepted Fitness Function')
-
-				for i in np.arange(1, len(profile_df.columns) + 1):
+				for i in np.arange(0, len(profile_df.columns)):
 
 					ax = np.array(axs).reshape(-1)[i]
 					ax.plot(profile_df.index, profile_df.iloc[:,i-1])
@@ -303,7 +308,7 @@ class MH():
 
 				# turn axis off if empty
 				if col == 0:
-					np.array(axs).reshape(-1)[i].axis('off')
+					np.array(axs).reshape(-1)[i+1].axis('off')
 
 				fig.tight_layout()
 				plt.show()
@@ -311,7 +316,32 @@ class MH():
 		self.melody = out_stream
 
 		if profiling:
-			return profile_df
+			
+			# if more than one fitness function
+			if len(profile_df.columns) > 1:
+
+				out_arr = np.empty((n_iter,))
+
+				# if weight dict, weight it
+				if self.weight_dict is not None:
+
+					for i in np.arange(n_iter):
+
+						# get sum of weight dict so can be normalized
+						weight_sum = np.nansum(list(self.weight_dict.values()))
+						out_arr[i] = np.nansum(
+							[profile_df.loc[i, weight_key] * self.weight_dict[weight_key] for weight_key in list(self.weight_dict.keys())]
+						) / weight_sum
+
+				# if equal weighted can just average
+				else:
+					out_arr = np.nanmean(profile_df, axis=1)
+
+				out_df = pd.Series(out_arr, name='Composite Fitness')
+				return out_df
+
+			else:
+				return profile_df
 		else:
 			return out_stream
 
@@ -339,15 +369,17 @@ class FitnessFunction():
 
 class NoLargeJumps(FitnessFunction):
 
-	def ff(self, mh, note_, index_):
+	def ff_total_melody(self, melody):
 		"""
-		Prefer smaller melody jumps to larger ones
+		See how the proposed note affects the melody as a whole
 		"""
+		intervals = extract_utils.get_intervals(melody)
+		return ((1/len(intervals))*(np.nansum((intervals+0.001)**2)))**-1
 
-		melody = list(mh.melody.recurse(classFilter=('Note', 'Rest')))
-
-		# replace original melody note with proposed note
-		melody[index_] = copy.deepcopy(note_)
+	def ff_selected_jump(self, melody, index_):
+		"""
+		See how the proposed affects the jumps locally
+		"""
 
 		if index_ == len(melody) - 1:
 			s = -3
@@ -362,6 +394,29 @@ class NoLargeJumps(FitnessFunction):
 		intervals = extract_utils.get_intervals(melody, s, e)
 		return ((1/len(intervals))*(np.nansum((intervals+0.001)**2)))**-1
 
+	def ff_large_jump(self, melody):
+
+		# if interval is greater than a 5th, want to reject
+		intervals = extract_utils.get_intervals(melody)
+		fifth_comparison = [True if i > 7 else False for i in intervals]
+		if any(fifth_comparison):
+			return 0.001
+		else:
+			return 1.
+
+	def ff(self, mh, note_, index_):
+
+		melody = list(mh.melody.recurse(classFilter=('Note', 'Rest')))
+
+		# replace original melody note with proposed note
+		melody[index_] = copy.deepcopy(note_)
+
+		# PARAMETERS TUNED IN `mh_jumps_tuning`
+		melody_score = self.ff_total_melody(melody) * .1
+		large_jump = self.ff_large_jump(melody) * .45
+		prop_jump_score = self.ff_selected_jump(melody, index_) * .45
+
+		return (np.nanmean([large_jump, melody_score, prop_jump_score]))
 
 	def profiling(self, mh, bass, melody):
 
@@ -533,7 +588,7 @@ class ContraryMotion(FitnessFunction):
 	def profiling(self, mh, bass, melody):
 
 		ct = self.concordance_table(melody, bass)
-		return self.metric_func(ct)
+		return 1 - self.metric_func(ct)
 
 
 class NotesToTonic(FitnessFunction):
@@ -546,46 +601,31 @@ class NotesToTonic(FitnessFunction):
 	def ff(self, mh, note_, index_):
 
 		melody = list(mh.melody.recurse(classFilter=('Note', 'Rest')))
-		# if at first note nothing to be led from
-		if index_ == 0:
-			return 1.
-		else:
-			prev = melody[index_ - 1]
-			if not isinstance(prev, (note.Rest)):
-				tonic = mh.key.getTonic().pitchClass
-				prev_pitch = prev.pitchClass
-				note_pitch = note_.pitchClass
-				relPitch_prev = (prev_pitch - tonic) % 12
-				relPitch = (note_pitch - tonic) % 12
-                
-                # supertonic
-				if relPitch_prev in set([1,2]):
-					if relPitch == 0:
-						return 1.
-					else:
-						return 0.001
-                # leading note
-				elif relPitch_prev in set([10,11]):
-					if relPitch == 0:
-						return 1.
-					else:
-						return 0.001
-				else:
-					return 1.
-			# if rest is previous pitch
-			else:
+
+		# check if the current note is a supertonic or leading note
+		tonic = mh.key.getTonic().pitchClass
+		prop_pitch = note_.pitch.pitchClass
+		if ((tonic - prop_pitch) % 12 in set([1,2,10,11])) and (index_ < len(melody)):
+
+			# if going to tonic
+			if melody[index_ + 1].pitch.pitchClass == tonic:
 				return 1.
+			else:
+				return .001
+
+		else:
+			return .001
+
     
 	def profiling(self, mh, bass, melody):
 	        
 			tonic = mh.key.getTonic().pitchClass
 
 			# convert all to relative pitches and rests
-			melody = list(mh.melody.recurse(classFilter=('Note', 'Rest')))
 			relMelody = []
 			for i, el in enumerate(melody):
 				if not isinstance(el, (note.Rest)):
-					relMelody.append((el.pitchClass - tonic) % 12)
+					relMelody.append((el.pitch.pitchClass - tonic) % 12)
 				else:
 					relMelody.append(-1)
 	            
@@ -597,12 +637,12 @@ class NotesToTonic(FitnessFunction):
 				relMelody.count(11)
 	            
 			actual_res_count = 0
-			for i in np.arange(1, len(relMelody) - 1):
+			for i in np.arange(1, len(relMelody)):
 				if (relMelody[i-1] in set([1,2,10,11])) and (relMelody[i] == 0):
 					actual_res_count += 1
 	                
 			# extra added in do prevent division by zero
-			return actual_res_count / (possible_res_count + 0.001)
+			return 1 - (actual_res_count / (possible_res_count + 0.001))
 
 
 class NoIllegalJumps(FitnessFunction):
@@ -698,6 +738,60 @@ class NoConsecutiveIntervals(FitnessFunction):
 				(between_intervals[i-1] in prohibited_interval_set):
 					consecutive_count += 1
 		return consecutive_count / len(between_intervals)
+
+
+class JumpThenStep(FitnessFunction):
+    
+	def ff(self, mh, note_, index_):
+
+		melody = list(mh.melody.recurse(classFilter=('Note', 'Rest')))
+        
+		if index_ == len(melody) - 1:
+			s = -3
+			e = -1
+		elif index_ == 0:
+			s = 0
+			e = 2
+		else:
+			s = index_ - 2
+			e = index_
+
+		intervals = extract_utils.get_intervals(melody, s, e)
+
+		# if first interval more than a 3rd prefer a step in the opposite direction
+		if (intervals[0] > 4):
+
+			# direction of jump
+			jump_dir = np.sign(intervals[0])
+            
+			if (intervals[1] <= 2) and \
+				((np.sign(intervals[1]) == (jump_dir * -1)) or (np.sign(intervals[1]) == 0)):
+				return 1.
+			else:
+				return 0.001
+		else:
+			return 1.
+        
+	def profiling(self, mh, bass, melody):
+
+		# replace original melody note with proposed note
+		intervals = extract_utils.get_intervals(melody)
+
+		# get number of jumps
+		jump_count = 0
+		step_after_jump_count = 0
+		for i in np.arange(len(intervals) - 1):
+            
+            # identify jump
+			if (intervals[i] > 4):
+				jump_count += 1
+				jump_dir = np.sign(intervals[i])
+
+				if (intervals[i + 1] <= 2) and \
+					((np.sign(intervals[i + 1]) == (jump_dir * -1)) or (np.sign(intervals[1]) == 0)):
+					step_after_jump_count += 1
+		            
+		return 1 - (step_after_jump_count / (jump_count + 0.001))
         
 
 ##### IMPLEMENTATIONS
@@ -708,9 +802,9 @@ def PachetRoySopranoAlgo(chorale):
 		(pitch.Pitch('c4'), pitch.Pitch('g5')),
 		{
 			'NLJ' : NoLargeJumps('NLJ'),
-			'CM' : ContraryMotion('CM', 'mcnemar')
+			'CM' : ContraryMotion('CM', 'agreement_proportion')
 		},
-		weight_dict={'NLJ': 10 , 'CM' : 2}
+		#weight_dict={'NLJ': 10 , 'CM' : 2}
 	)
 
 def TsangAikenAlgo(chorale, prop_chords):
@@ -722,10 +816,18 @@ def TsangAikenAlgo(chorale, prop_chords):
 			'CM' : ContraryMotion('CM', 'agreement_proportion'),
 			'NTT' : NotesToTonic('NTT'),
 			'NIJ' : NoIllegalJumps('NIJ'),
-			'NCI' : NoConsecutiveIntervals('NCI', [-5, 0, 7])
+			'NCI' : NoConsecutiveIntervals('NCI', [-5, 0, 7]),
+			'JTS' : JumpThenStep('JTS'),
 		},
 		prop_chords=prop_chords,
-		weight_dict={'NLJ': 20 , 'CM' : 10, 'NTT' : 1, 'NIJ' : 100, 'NCI' : 200}
+		weight_dict={
+			'NLJ': 0.024242 ,
+			'CM' : 0.236364,
+			'NTT' : 0.275758,
+			'NIJ' : 0.175758,
+			'NCI' : 0.139394,
+			'JTS' : 0.148485
+		}
 	)
 
 
