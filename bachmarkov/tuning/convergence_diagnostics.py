@@ -20,7 +20,7 @@ from pandas.plotting import autocorrelation_plot
 
 class ConvergenceDiagnostics():
 
-	def __init__(self, mh, n_iter, constraint_name, burn_in=0, walkers=1, tqdm_show=True, plotting=True):
+	def __init__(self, model, model_type, n_iter, constraint_name, burn_in=0, walkers=1, tqdm_show=True, plotting=True):
 		"""
 		Class with functionality to present diagnostic information as to the 
 		convergence of the MH algorithm, run `n_iter` times
@@ -28,8 +28,11 @@ class ConvergenceDiagnostics():
 		Parameters
 		----------
 
-			mh : mh.MH
-				metropolis hastings model to profile
+			model : mh.MH or gibbs.Gibbs
+				metropolis hastings or gibbs sampler model to profile
+
+			model_type : string
+				`MH` or `Gibbs`
 
 			n_iter : int
 				Number of iterations to run the MH algorithm when profiling
@@ -44,7 +47,8 @@ class ConvergenceDiagnostics():
 				Number of paths to take
 		"""
 
-		self.model = mh
+		self.model = model
+		self.model_type = model_type
 		self.n_iter = n_iter
 		self.constraint_name = constraint_name
 		self.burn_in = burn_in
@@ -69,7 +73,11 @@ class ConvergenceDiagnostics():
 			for i, walk in enumerate(np.arange(self.walkers)):
 
 				# initialize new starting mh algo for each walker
-				self.model.init_melody()
+				if self.model_type == 'MH':
+					self.model.init_melody()
+				else:
+					self.model.alto = self.model.init_part('Alto', self.model.alto_range, self.model.chords)
+					self.model.tenor = self.model.init_part('Tenor', self.model.tenor_range, self.model.chords)
 
 				mh_outputs[i, :] = self.model.run(self.n_iter, profiling=True, plotting=False).values.flatten()
 				mh_less_burnin = mh_outputs[i, self.burn_in:]

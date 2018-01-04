@@ -28,7 +28,7 @@ def partbool(chorales, string):
 		return False
 
 
-def load_clean_chorales():
+def load_clean_chorales(n_upload=None):
 	"""
 	Function to clean the chorales in the music21 database and save major
 	and minor list of musicxml files
@@ -39,7 +39,12 @@ def load_clean_chorales():
 	chorales = {}
 
 	# get parsed formats, not just paths [NB: long function (~1min), tqdm used to monitor progress]
-	for i in trange(len(chor), desc='# Chorales Parsed'):
+
+	if n_upload is not None:
+		N = n_upload
+	else:
+		N = len(chor)
+	for i in trange(N, desc='# Chorales Parsed'):
 
 	    c = corpus.parse(chor[i])
 
