@@ -605,7 +605,7 @@ class NotesToTonic(FitnessFunction):
 		# check if the current note is a supertonic or leading note
 		tonic = mh.key.getTonic().pitchClass
 		prop_pitch = note_.pitch.pitchClass
-		if ((tonic - prop_pitch) % 12 in set([1,2,10,11])) and (index_ < len(melody)):
+		if ((tonic - prop_pitch) % 12 in set([1,2,10,11])) and (index_ < len(melody) - 1):
 
 			# if going to tonic
 			if melody[index_ + 1].pitch.pitchClass == tonic:
