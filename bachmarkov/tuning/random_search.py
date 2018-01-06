@@ -76,8 +76,8 @@ class RandomSearch():
             pool.close()
             pool.join()
                 
-            out_df.loc[i, 'PSRF'] = np.nanmean(np.array(out_dict['PSRF']).astype(float))
-            out_df.loc[i, 'Score'] = np.nanmean(np.array(out_dict['Score']).astype(float))
+            out_df.loc[i, 'PSRF'] = np.nanmean(np.array([float(o['PSRF']) for o in out_dict]))
+            out_df.loc[i, 'Score'] = np.nanmean(np.array([float(o['Score']) for o in out_dict]))
             
         return out_df
 
