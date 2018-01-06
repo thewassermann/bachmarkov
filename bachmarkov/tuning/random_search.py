@@ -74,10 +74,10 @@ class RandomSearch():
             pool = ThreadPool(walkers)
             out_dict = pool.starmap(self.parallel_run, parallel_params)
             pool.close()
-            pool.join
+            pool.join()
                 
-            out_df.loc[i, 'PSRF'] = np.nanmean(out_dict['PSRF'])
-            out_df.loc[i, 'Score'] = np.nanmean(out_dict['Score'])
+            out_df.loc[i, 'PSRF'] = np.nanmean(np.array(out_dict['PSRF']).astype(float))
+            out_df.loc[i, 'Score'] = np.nanmean(np.array(out_dict['Score']).astype(float))
             
         return out_df
 
