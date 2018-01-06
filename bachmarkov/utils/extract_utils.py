@@ -7,7 +7,7 @@ import numpy as np
 import copy
 
 
-def flattened_to_stream(flat, bassline, out_stream, part_):
+def flattened_to_stream(flat, bassline, out_stream, part_, fermata_layer=None):
 	"""
 	Function to take in flattened data of just notes and rests
 	and transform it into a fully fledged stream
@@ -34,9 +34,16 @@ def flattened_to_stream(flat, bassline, out_stream, part_):
 			for measure_el in el:
 				if isinstance(measure_el, note.Note):
 					out_note = flat[note_index]
+					if (fermata_layer is not None):
+						if (fermata_layer[note_index] == 1) and (out_note.expressions == []):
+							out_note.expressions.append(expressions.Fermata())
 					m.insert(measure_el.offset, out_note)
 				else:
-					m.insert(measure_el.offset, note.Rest(quarterLength=1))
+					in_note = note.Rest(quarterLength=1)
+					if (fermata_layer is not None):
+						if (fermata_layer[note_index] == 1) and (in_note.expressions == []):
+							in_note.expressions.append(expressions.Fermata())
+					m.insert(measure_el.offset, in_note)
 				note_index += 1
 			out_stream.insert(el.offset, m)
 		elif isinstance (el, (note.Note, note.Rest)):
@@ -121,26 +128,38 @@ def to_crotchet_stream(part, chord_flag=False):
 							# on beat note, less than 1 beat
 							if offset.is_integer() and dur <= 1.:
 								if isinstance(measure_item, (note.Rest)):
-									m.insert(offset, note.Rest(quarterLength=1))
+									in_note = note.Rest(quarterLength=1)
+									in_note.expressions = measure_item.expressions
+									m.insert(offset, in_note)
 								else:
-									m.insert(offset, note.Note(measure_item.pitch, quarterLength=1))
+									in_note = note.Note(measure_item.pitch,quarterLength=1)
+									in_note.expressions = measure_item.expressions
+									m.insert(offset, in_note)
 	                            
 	                        # on beat note, more than one beat
 							elif offset.is_integer() and dur > 1.:
 								for cnt in np.arange(np.ceil(dur)):
 									if isinstance(measure_item, (note.Rest)):
-										m.insert(offset + cnt, note.Rest(quarterLength=1))
+										in_note = note.Rest(quarterLength=1)
+										in_note.expressions = measure_item.expressions
+										m.insert(offset + cnt, in_note)
 									else:
-										m.insert(offset + cnt, note.Note(measure_item.pitch, quarterLength=1))
+										in_note = note.Note(measure_item.pitch, quarterLength=1)
+										in_note.expressions = measure_item.expressions
+										m.insert(offset + cnt, in_note)
 	                                
 	                        # on non-beat note, not covering beat -> skip
 	                        # on non-beat note, covering beat
 							elif dur >= 1.:
 								for cnt in np.arange(np.ceil(dur)):
 									if isinstance(measure_item, (note.Rest)):
-										m.insert(np.ceil(offset) + cnt, note.Rest(quarterLength=1))
+										in_note = note.Rest(quarterLength=1)
+										in_note.expressions = measure_item.expressions
+										m.insert(np.ceil(offset) + cnt, in_note)
 									else:
-										m.insert(np.ceil(offset) + cnt, note.Note(measure_item.pitch, quarterLength=1))
+										in_note = note.Note(measure_item.pitch, quarterLength=1)
+										in_note.expressions = measure_item.expressions
+										m.insert(np.ceil(offset) + cnt, in_note)
 
 					else:
 
@@ -152,26 +171,38 @@ def to_crotchet_stream(part, chord_flag=False):
 							# on beat note, less than 1 beat
 							if offset.is_integer() and dur <= 1.:
 								if isinstance(measure_item, (note.Rest)):
-									m.insert(offset, note.Rest(quarterLength=1))
+									in_chord = note.Rest(quarterLength=1)
+									in_chord.expressions = measure_item.expressions
+									m.insert(offset, in_chord)
 								else:
-									m.insert(offset, chord.Chord(measure_item.pitches, quarterLength=1))
+									in_chord = chord.Chord(measure_item.pitches, quarterLength=1)
+									in_chord.expressions = measure_item.expressions
+									m.insert(offset, in_chord)
 	                            
 	                        # on beat note, more than one beat
 							elif offset.is_integer() and dur > 1.:
 								for cnt in np.arange(np.ceil(dur)):
 									if isinstance(measure_item, (note.Rest)):
-										m.insert(offset + cnt, note.Rest(quarterLength=1))
+										in_chord = note.Rest(quarterLength=1)
+										in_chord.expressions = measure_item.expressions
+										m.insert(offset + cnt, in_chord)
 									else:
-										m.insert(offset + cnt, chord.Chord(measure_item.pitches, quarterLength=1))
+										in_chord = chord.Chord(measure_item.pitches, quarterLength=1)
+										in_chord.expressions = measure_item.expressions
+										m.insert(offset + cnt, in_chord)
 	                                
 	                        # on non-beat note, not covering beat -> skip
 	                        # on non-beat note, covering beat
 							elif dur >= 1.:
 								for cnt in np.arange(np.ceil(dur)):
 									if isinstance(measure_item, (note.Rest)):
-										m.insert(np.ceil(offset) + cnt, note.Rest(quarterLength=1))
+										in_chord = note.Rest(quarterLength=1)
+										in_chord.expressions = measure_item.expressions
+										m.insert(np.ceil(offset) + cnt, in_chord)
 									else:
-										m.insert(np.ceil(offset) + cnt, chord.Chord(measure_item.pitches, quarterLength=1))
+										in_chord = chord.Chord(measure_item.pitches, quarterLength=1)
+										in_chord.expressions = measure_item.expressions
+										m.insert(np.ceil(offset) + cnt, in_chord)
                                 
 				# add measure to score
 				out_stream.insert(measure_offset, m)
@@ -214,10 +245,24 @@ def extract_bassline(chorale):
 		if bass.isRest:
 			degree_outstream.append(-1)
 		else:
-			degree = (bass.pitchClass - pc) % 12
+			degree = (bass.pitch.pitchClass - pc) % 12
 			degree_outstream.append(degree)
     
 	return degree_outstream
+
+
+def extract_fermata_layer(part_):
+	"""
+	Take in a music21.stream.part and get the fermatas on particular notes
+	"""
+	fermata_layer = []
+	for note_ in part_.recurse(classFilter=('Note', 'Rest')):
+		if note_.expressions == []:
+			fermata_layer.append(0)
+		else:
+			fermata_layer.append(1)
+
+	return fermata_layer
 
 
 def extract_notes_from_chord(chord_str):
