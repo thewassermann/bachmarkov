@@ -138,3 +138,11 @@ class FillInThirds(Embellishment):
 				out_stream.insert(el.offset, copy.deepcopy(el))
 
 		return out_stream
+
+
+class FermataFill(Embellishment):
+
+	def embellish(self, embellisher, target_part):
+		"""
+		Fill in consecutive quarter notes if they both fave fermatas
+		"""

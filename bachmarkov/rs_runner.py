@@ -13,22 +13,50 @@ import seaborn as sns
 
 import pickle
 
-chorales = data_utils.load_clean_chorales(n_upload=20)
+import sys
 
-mh_algo = mh.PachetRoySopranoAlgo(
-    chorales['Major'][1],
-)
+def main():
+	"""
+	Command line interface for  random search:
 
-RS = random_search.RandomSearch(
-    np.random.choice(chorales['Major'], size=3),
-    mh_algo,
-    'MH'
-)
+	Parameters
+	----------
 
-RS_output = RS.run(
-    n_iter=3,
-    run_length=100,
-    walkers=3
-)
+		n_iter : int
+		run_length : int
+		walkers : int
+		out_filename :str
+	"""
 
-pickle.dump(RS_output, open( "RS_output.p", "wb" ) )
+	if len(sys.argv) != 5:
+		print('Input correct number of Parameters please')
+		return -1
+
+	n_iter = int(sys.argv[1])
+	run_length = int(sys.argv[2])
+	walkers = int(sys.argv[3])
+	out_filename = sys.argv[4] + ".p"
+
+	chorales = data_utils.load_clean_chorales(n_upload=20)
+
+	mh_algo = mh.PachetRoySopranoAlgo(
+		chorales['Major'][1],
+	)
+
+	RS = random_search.RandomSearch(
+		np.random.choice(chorales['Major'], size=3),
+		mh_algo,
+		'MH'
+	)
+
+	RS_output = RS.run(
+		n_iter=n_iter,
+		run_length=run_length,
+		walkers=walkers
+	)
+
+	pickle.dump(RS_output, open(out_filename, "wb" ))
+
+
+if __name__ == '__main__':
+   main()
