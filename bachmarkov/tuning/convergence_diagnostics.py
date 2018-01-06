@@ -17,6 +17,8 @@ import matplotlib.pyplot as plt
 
 from pandas.plotting import autocorrelation_plot
 
+from multiprocessing.dummy import Pool as ThreadPool 
+
 
 class ConvergenceDiagnostics():
 
@@ -63,37 +65,34 @@ class ConvergenceDiagnostics():
 			raise Exception("Number of iterations insufficient for given burn-in")
 
 		# return the output of the MH Algos
-		mh_outputs = np.empty((self.walkers, self.n_iter))
+		# mh_outputs = np.empty((self.walkers, self.n_iter))
 
 		if plotting:
 			fig, axs = plt.subplots(3,1, figsize=(12, 5 * 3))
 
-		with tqdm.tqdm(total=self.walkers, desc='Walkers Run', disable=self.tqdm_show) as pbar:
+		#with tqdm.tqdm(total=self.walkers, desc='Walkers Run', disable=self.tqdm_show) as pbar:
+
+		# multithreading
+		pool = ThreadPool(self.walkers)
+		mh_outputs = pool.map(self.parallel_walk, np.arange(self.walkers))
+		pool.close()
+		pool.join()
+		mh_outputs = np.array(mh_outputs).astype(float)
+
+		if plotting:
 
 			for i, walk in enumerate(np.arange(self.walkers)):
-
-				# initialize new starting mh algo for each walker
-				if self.model_type == 'MH':
-					self.model.init_melody()
-				else:
-					self.model.alto = self.model.init_part('Alto', self.model.alto_range, self.model.chords)
-					self.model.tenor = self.model.init_part('Tenor', self.model.tenor_range, self.model.chords)
-
-				mh_outputs[i, :] = self.model.run(self.n_iter, profiling=True, plotting=False).values.flatten()
+				# running mean plot
 				mh_less_burnin = mh_outputs[i, self.burn_in:]
+				axs[0].plot(np.arange(self.burn_in, self.n_iter), mh_less_burnin, alpha=0.1, color='blue')
+				axs[0].set_xlabel('n Iterations (Minus Burn-In Period)')
+				axs[0].set_ylabel('Score Function')
+				axs[0].set_title('{} after {} iterations'.format(self.constraint_name, self.n_iter))
 
-				if plotting:
-					# running mean plot
-					axs[0].plot(np.arange(self.burn_in, self.n_iter), mh_less_burnin, alpha=0.1, color='blue')
-					axs[0].set_xlabel('n Iterations (Minus Burn-In Period)')
-					axs[0].set_ylabel('Score Function')
-					axs[0].set_title('{} after {} iterations'.format(self.constraint_name, self.n_iter))
+				autocorrelation_plot(mh_less_burnin, ax=axs[1], color='blue', alpha=0.25)
+				axs[1].set_title('{} ACF'.format(self.constraint_name))
 
-					autocorrelation_plot(mh_less_burnin, ax=axs[1], color='blue', alpha=0.25)
-					axs[1].set_title('{} ACF'.format(self.constraint_name))
-
-				pbar.update(1)
-
+			#pbar.update(1)
 
 		PSRF = self.gelman_rubin(mh_outputs[:, self.burn_in:])
 
@@ -110,13 +109,28 @@ class ConvergenceDiagnostics():
 
 		return PSRF
 
+
+	def parallel_walk(self, dummy):
+		"""
+		Abstracted in order to run the function in parallel
+		"""
+		# initialize new starting mh algo for each walker
+		if self.model_type == 'MH':
+			self.model.init_melody()
+		else:
+			self.model.alto = self.model.init_part('Alto', self.model.alto_range, self.model.chords)
+			self.model.tenor = self.model.init_part('Tenor', self.model.tenor_range, self.model.chords)
+
+		return self.model.run(self.n_iter, profiling=True, plotting=False).values.flatten()
+
+
+
 	def gelman_rubin(self, mh_outputs_less_burnin):
 		"""
 		Function to produce the Gelman Rubin Potential Scale Reduction Factor
 
 		source : http://www.math.pitt.edu/~swigon/Homework/brooks97assessing.pdf
 		"""
-
 		n = mh_outputs_less_burnin.shape[1]
 
 		# number of walkers

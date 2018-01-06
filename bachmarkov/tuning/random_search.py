@@ -19,6 +19,8 @@ from tuning import convergence_diagnostics
 
 import matplotlib.pyplot as plt
 
+from multiprocessing.dummy import Pool as ThreadPool 
+
 class RandomSearch():
     """
     Function to condut a Random Search in order to guage the best weight dictionary
@@ -56,8 +58,7 @@ class RandomSearch():
         for i in trange(n_iter, desc='Search Iteration', leave=True, position=0):
             
             # set up a new weight dictionary to test
-            choices = np.random.choice(100, size=len(list(self.function_dict.keys())))
-            weight_list = choices / np.nansum(choices)
+            weight_list = np.random.dirichlet(np.ones(len(list(self.function_dict.keys()))))
             self.weight_dict = {k : weight_list[idx] for idx, k in enumerate(list(self.function_dict.keys()))}
             
             # update output frame for new iteration through chorales
@@ -68,52 +69,65 @@ class RandomSearch():
             chorale_stats_PSRF = np.empty((len(self.test_chorales),))
             chorale_stats_score = np.empty((len(self.test_chorales),))
             
-            # loop through each chorale
-            for j in np.arange(len(self.test_chorales)):
-            
-                if self.model_type == 'MH':
-                    model_ = mh.MH(
-                        self.test_chorales[j],
-                        self.vocal_range,
-                        self.function_dict,
-                        weight_dict=self.weight_dict,
-                        prop_chords = None,
-                    )
-                else:
-                    model_ = gibbs.GibbsSampler(
-                        self.test_chorales[j],
-                        extract_utils.to_crotchet_stream(self.test_chorales[j].parts['Soprano']),
-                        extract_utils.to_crotchet_stream(self.test_chorales[j].parts['Bass']),
-                        chord_utils.degrees_on_beats(self.test_chorales[j]),
-                        vocal_range_dict={
-                            'Alto' : (pitch.Pitch('g3'), pitch.Pitch('c5')),
-                            'Tenor' : (pitch.Pitch('c3'), pitch.Pitch('e4')), 
-                        },
-                        conditional_dict={
-                            'NC' : gibbs.NoCrossing('NC'),
-                            'SWM' : gibbs.StepWiseMotion('SWM'),
-                            'NPM' : gibbs.NoParallelMotion('NPM'),
-                            'OM' : gibbs.OctaveMax('OM')
-                        },
-                    )
+            # create multithreaded process
+            parallel_params = [(tc, run_length, walkers) for tc in self.test_chorales]
+            pool = ThreadPool(walkers)
+            out_dict = pool.starmap(self.parallel_run, parallel_params)
+            pool.close()
+            pool.join
                 
-                cd = convergence_diagnostics.ConvergenceDiagnostics(
-                    model_,
-                    self.model_type,
-                    run_length,
-                    'Tsang Aitken',
-                    int(run_length / 2),
-                    walkers,
-                    tqdm_show=False,
-                    plotting=False
-                )
-                
-                # run the profiler for the jth chorale
-                chorale_stats_PSRF[j] = cd.PSRF
-                chorale_stats_score[j] = model_.run(run_length, True, False).iloc[-1]
-                
-                
-            out_df.loc[i, 'PSRF'] = np.nanmean(chorale_stats_PSRF)
-            out_df.loc[i, 'Score'] = np.nanmean(chorale_stats_score)
+            out_df.loc[i, 'PSRF'] = np.nanmean(out_dict['PSRF'])
+            out_df.loc[i, 'Score'] = np.nanmean(out_dict['Score'])
             
         return out_df
+
+
+    def parallel_run(self, test_chorale, run_length, walkers):
+        """
+        Abstract the running of each chorale so that process can be multithreaded
+        """
+        if self.model_type == 'MH':
+            model_ = mh.MH(
+                test_chorale,
+                self.vocal_range,
+                self.function_dict,
+                weight_dict=self.weight_dict,
+                prop_chords = None,
+            )
+        else:
+            model_ = gibbs.GibbsSampler(
+                test_chorale,
+                extract_utils.to_crotchet_stream(test_chorale.parts['Soprano']),
+                extract_utils.to_crotchet_stream(test_chorale.parts['Bass']),
+                chord_utils.degrees_on_beats(test_chorale),
+                vocal_range_dict={
+                    'Alto' : (pitch.Pitch('g3'), pitch.Pitch('c5')),
+                    'Tenor' : (pitch.Pitch('c3'), pitch.Pitch('e4')), 
+                },
+                conditional_dict={
+                    'NC' : gibbs.NoCrossing('NC'),
+                    'SWM' : gibbs.StepWiseMotion('SWM'),
+                    'NPM' : gibbs.NoParallelMotion('NPM'),
+                    'OM' : gibbs.OctaveMax('OM')
+                },
+            )
+        
+        cd = convergence_diagnostics.ConvergenceDiagnostics(
+            model_,
+            self.model_type,
+            run_length,
+            'Tsang Aitken',
+            int(run_length / 2),
+            walkers,
+            tqdm_show=False,
+            plotting=False
+        )
+
+        # run the profiler for the jth chorale
+        return {
+            'PSRF' : cd.PSRF,
+            'Score' : model_.run(run_length, True, False).iloc[-1],
+        }
+
+
+

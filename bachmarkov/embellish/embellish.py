@@ -20,7 +20,7 @@ class Embellisher():
 	into fully-fledged lines
 	"""
 
-	def __init__(self, parts_on_beats, rules_dict, bassline):
+	def __init__(self, parts_on_beats, rules_dict, bassline, fermata_layer):
 
 		self.parts_on_beats = parts_on_beats
 		self.rules_dict = rules_dict
@@ -29,6 +29,8 @@ class Embellisher():
 		self.alto = self.run_part('Alto')
 		self.tenor = self.run_part('Tenor')
 		self.bass = bassline
+		self.fermata_layer = fermata_layer
+
 
 
 	def return_chorale(self):
@@ -37,8 +39,11 @@ class Embellisher():
 		"""
 		# conjoin two parts and shows
 		s = stream.Score()
+
+		# add in expression
 		soprano = stream.Part(self.soprano)
 		soprano.id = 'Soprano'
+
 		alto = stream.Part(self.alto)
 		alto.id = 'Alto'
 		tenor = stream.Part(self.tenor)
@@ -105,7 +110,9 @@ class FillInThirds(Embellishment):
 						# check if third with next note
 						if note_index < len(target_part_flat) - 1:
 							next_note = target_part_flat[note_index + 1]
-							if not isinstance(next_note, note.Rest):
+
+							# correct for rests
+							if (not isinstance(next_note, note.Rest)) or (measure_el.expressions != []):
 								interval_ = interval.notesToChromatic(measure_el, next_note).semitones
 								interval_dir = np.sign(interval_)
 								if (interval_ in set(np.multiply(interval_dir, [3,4]))) and (interval_dir != 0):
@@ -130,4 +137,4 @@ class FillInThirds(Embellishment):
 			else:
 				out_stream.insert(el.offset, copy.deepcopy(el))
 
-		return out_stream			
+		return out_stream

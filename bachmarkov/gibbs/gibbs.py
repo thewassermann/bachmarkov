@@ -43,6 +43,11 @@ class GibbsSampler():
 		self.alto = self.init_part('Alto', self.alto_range, self.chords)
 		self.tenor = self.init_part('Tenor', self.tenor_range, self.chords)
 
+		# may need to abstract this so tha MH cant see the actual soprano line?? //TODO
+		self.fermata_layer = extract_utils.extract_fermata_layer(
+			extract_utils.to_crotchet_stream(self.chorale.parts['Soprano'])
+		)
+
 
 	def set_weight_dict(self, weight_dict):
 		"""
@@ -119,8 +124,22 @@ class GibbsSampler():
 		"""
 		# conjoin two parts and shows
 		s = stream.Score()
+
+		# add in expression
 		soprano = stream.Part(self.soprano)
+		out_stream = stream.Stream()
+		soprano_flat = list(soprano.recurse(classFilter=('Note', 'Rest')))
+		soprano = extract_utils.flattened_to_stream(
+			soprano_flat,
+			self.bass,
+			out_stream,
+			'Soprano',
+			self.fermata_layer
+		)
+		
+		soprano = stream.Part(soprano)
 		soprano.id = 'Soprano'
+
 		alto = stream.Part(self.alto)
 		alto.id = 'Alto'
 		tenor = stream.Part(self.tenor)

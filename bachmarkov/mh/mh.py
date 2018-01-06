@@ -43,6 +43,11 @@ class MH():
 		# initialize melody at start of algo
 		self.melody = self.init_melody()
 
+		# may need to abstract this so tha MH cant see the actual soprano line?? //TODO
+		self.fermata_layer = extract_utils.extract_fermata_layer(
+			extract_utils.to_crotchet_stream(chorale.parts['Soprano'])
+		)
+
 
 	def random_note_in_range(self):
 		"""
@@ -250,8 +255,8 @@ class MH():
 		else:
 			tf_show_progress = False
 
-		for i in trange(n_iter, disable=tf_show_progress):
-
+		#for i in trange(n_iter, disable=tf_show_progress):
+		for i in np.arange(n_iter):
 
 			# select a note/chord at random (note beginning/end difficulties)
 			idx = np.random.choice(stream_choices)
@@ -600,7 +605,7 @@ class NotesToTonic(FitnessFunction):
 
 	def ff(self, mh, note_, index_):
 
-		melody = list(mh.melody.recurse(classFilter=('Note', 'Rest')))
+		melody = list(mh.melody.recurse(classFilter=('Note')))
 
 		# check if the current note is a supertonic or leading note
 		tonic = mh.key.getTonic().pitchClass
