@@ -133,7 +133,7 @@ class RandomSearch():
 
         except Exception as e:
 
-            # run the profiler for the jth chorale
+            # what happens if a particular run encounters an error
             return {
                 'PSRF' : np.nan,
                 'Score' : model_.run(run_length, True, False).iloc[-1],

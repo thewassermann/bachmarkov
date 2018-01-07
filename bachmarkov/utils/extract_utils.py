@@ -7,6 +7,68 @@ import numpy as np
 import copy
 
 
+# def flattened_to_stream(flat, bassline, out_stream, part_, fermata_layer=None):
+# 	"""
+# 	Function to take in flattened data of just notes and rests
+# 	and transform it into a fully fledged stream
+# 	"""
+
+# 	# loop through measures
+# 	note_index = 0
+
+# 	# offset for held notes
+# 	held_offset = 0
+# 	for el in bassline.recurse(skipSelf=True):
+# 		if el == clef.BassClef():
+# 			if (part_ == 'Soprano') or (part_ == 'Alto'):
+# 				out_stream.insert(clef.TrebleClef())
+# 			else:
+# 				out_stream.insert(clef.Treble8vbClef())
+# 		elif isinstance(el, instrument.Instrument):
+# 			if part_ == 'Soprano':
+# 				out_stream.insert(instrument.Soprano())
+# 			elif part_ == 'Alto':
+# 				out_stream.insert(instrument.Alto())
+# 			elif part_ == 'Tenor':
+# 				out_stream.insert(instrument.Tenor())
+# 		elif isinstance(el, (stream.Measure)):
+# 			# select a random index for a semitone and add to outstream
+# 			m = stream.Measure()
+# 			for measure_el in el:
+
+# 				if held_offset == 0:
+
+# 					if isinstance(measure_el, note.Note):
+# 						in_note = flat[note_index]
+# 						if (fermata_layer is not None):
+# 							if (fermata_layer[note_index] == 1) and (in_note.expressions == []):
+# 								in_note.expressions.append(expressions.Fermata())
+# 						m.insert(measure_el.offset, in_note)
+
+# 					else:
+# 						# in_note = note.Rest(quarterLength=1.)
+# 						in_note = note.Rest(quarterLength=flat[note_index].duration.quarterLength)
+# 						if (fermata_layer is not None):
+# 							if (fermata_layer[note_index] == 1) and (in_note.expressions == []):
+# 								in_note.expressions.append(expressions.Fermata())
+# 						m.insert(measure_el.offset, in_note)
+
+# 					# number of beats to be held 
+# 					held_offset = flat[note_index].duration.quarterLength - 1
+# 					note_index += 1
+
+# 				else:	
+# 					held_offset -= 1
+
+# 			out_stream.insert(el.offset, m)
+# 		elif isinstance (el, (note.Note, note.Rest)):
+# 			continue
+# 		else:
+# 			out_stream.insert(el.offset, copy.deepcopy(el))
+
+# 	return out_stream
+
+
 def flattened_to_stream(flat, bassline, out_stream, part_, fermata_layer=None):
 	"""
 	Function to take in flattened data of just notes and rests
@@ -15,6 +77,9 @@ def flattened_to_stream(flat, bassline, out_stream, part_, fermata_layer=None):
 
 	# loop through measures
 	note_index = 0
+
+	# offset for held notes
+	held_offset = 0
 	for el in bassline.recurse(skipSelf=True):
 		if el == clef.BassClef():
 			if (part_ == 'Soprano') or (part_ == 'Alto'):
@@ -31,20 +96,22 @@ def flattened_to_stream(flat, bassline, out_stream, part_, fermata_layer=None):
 		elif isinstance(el, (stream.Measure)):
 			# select a random index for a semitone and add to outstream
 			m = stream.Measure()
-			for measure_el in el:
-				if isinstance(measure_el, note.Note):
-					out_note = flat[note_index]
-					if (fermata_layer is not None):
-						if (fermata_layer[note_index] == 1) and (out_note.expressions == []):
-							out_note.expressions.append(expressions.Fermata())
-					m.insert(measure_el.offset, out_note)
+
+			# get length of measure
+			measure_length = el.duration.quarterLength
+
+			length_couter = 0
+
+			for note_ in flat[note_index:]:
+
+				# check if adding would exceed measure_length
+				if note_.duration.quarterLength + length_couter <= measure_length:
+					m.insert(length_couter, copy.deepcopy(note_))
+					length_couter += flat[note_index].duration.quarterLength
+					note_index += 1
 				else:
-					in_note = note.Rest(quarterLength=1)
-					if (fermata_layer is not None):
-						if (fermata_layer[note_index] == 1) and (in_note.expressions == []):
-							in_note.expressions.append(expressions.Fermata())
-					m.insert(measure_el.offset, in_note)
-				note_index += 1
+					break
+
 			out_stream.insert(el.offset, m)
 		elif isinstance (el, (note.Note, note.Rest)):
 			continue

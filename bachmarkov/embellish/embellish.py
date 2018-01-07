@@ -13,6 +13,8 @@ from random import shuffle
 
 from utils import chord_utils, extract_utils, data_utils
 
+import copy
+
 class Embellisher():
 	"""
 	Class to provide embellishments to individual lines of
@@ -24,14 +26,12 @@ class Embellisher():
 
 		self.parts_on_beats = parts_on_beats
 		self.rules_dict = rules_dict
+		self.fermata_layer = fermata_layer
 		self.key = parts_on_beats.analyze('key')
+		self.bass = bassline
 		self.soprano = self.run_part('Soprano')
 		self.alto = self.run_part('Alto')
 		self.tenor = self.run_part('Tenor')
-		self.bass = bassline
-		self.fermata_layer = fermata_layer
-
-
 
 	def return_chorale(self):
 		"""
@@ -63,11 +63,9 @@ class Embellisher():
 
 		# get order for embellishment functions to run
 		embellishment_functions = list(self.rules_dict.keys())
-		# NB inplace
-		shuffle(embellishment_functions)
 
 		for embellishment_function in embellishment_functions:
-			target_part = self.rules_dict[embellishment_function].embellish(self, target_part)
+			target_part = self.rules_dict[embellishment_function].embellish(self, target_part, target_part_name)
 
 		return target_part
 
@@ -77,14 +75,14 @@ class Embellishment():
 	def __init__(self, name):
 		self.name = name
 
-	def embellish(self, embellisher):
+	def embellish(self, embellisher, target_part):
 		pass
 
 
 
 class FillInThirds(Embellishment):
 
-	def embellish(self, embellisher, target_part):
+	def embellish(self, embellisher, target_part, target_part_name):
 		"""
 		When there is an interval of a third, fill in with 
 		two quavers bridging the gap
@@ -112,7 +110,10 @@ class FillInThirds(Embellishment):
 							next_note = target_part_flat[note_index + 1]
 
 							# correct for rests
-							if (not isinstance(next_note, note.Rest)) or (measure_el.expressions != []):
+							if (not isinstance(next_note, note.Rest)) and \
+								(embellisher.fermata_layer[note_index] == 0) and \
+								measure_el.duration.quarterLength == 1.:
+
 								interval_ = interval.notesToChromatic(measure_el, next_note).semitones
 								interval_dir = np.sign(interval_)
 								if (interval_ in set(np.multiply(interval_dir, [3,4]))) and (interval_dir != 0):
@@ -142,7 +143,77 @@ class FillInThirds(Embellishment):
 
 class FermataFill(Embellishment):
 
-	def embellish(self, embellisher, target_part):
+	def embellish(self, embellisher, target_part, target_part_name):
 		"""
 		Fill in consecutive quarter notes if they both fave fermatas
 		"""
+
+		# just notes and rests
+		target_part_flat = list(target_part.recurse(classFilter=('Note', 'Rest')))
+
+		# stream to store output
+		out_stream = stream.Stream()
+		out_flat = []
+
+		# on multiple fermatas do not operate on them sequentially
+		skip_flag = False
+
+		for idx in np.arange(len(target_part_flat)):
+
+			# check if the next beat contains a fermata and,
+			# if so, carry the fermata through in a single note
+
+			if (embellisher.fermata_layer[idx] == 1) and \
+				 not skip_flag and \
+				 not target_part_flat[idx].isRest:
+
+				# get the final index of the fermata
+				end_idx = self.get_fermata_end_index(idx, embellisher.fermata_layer)
+
+				# quarter note length of help note
+				qLength = float(end_idx - idx)
+				note_pitch = target_part_flat[idx].pitch
+				out_note = note.Note(note_pitch, quarterLength=qLength)
+				if target_part_name == 'Soprano':
+					out_note.expressions.append(expressions.Fermata())
+				out_flat.append(out_note)
+				skip_flag = True
+
+			else:
+				if (embellisher.fermata_layer[idx] == 0):
+					out_flat.append(copy.deepcopy(target_part_flat[idx]))
+					skip_flag = False
+
+		return extract_utils.flattened_to_stream(
+			out_flat,
+			embellisher.parts_on_beats['Bass'],
+			out_stream,
+			target_part_name
+		)
+
+
+	def get_fermata_end_index(self, start_index, fermata_layer):
+		"""
+		Function to return the end index of a string of fermatas
+
+		Parameters
+		----------
+
+			start_index : int
+				index of flattened part where the fermata has started
+
+			fermata_layer : bool list
+		"""				
+		N = len(fermata_layer) - start_index
+
+		for i in np.arange(N): 
+
+			if not all(np.array(fermata_layer[start_index:(start_index + i)]).astype(bool)):
+				return i + start_index - 1 
+
+		return start_index + i + 1
+
+			
+
+
+

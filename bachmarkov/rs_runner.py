@@ -39,14 +39,32 @@ def main():
 
 	chorales = data_utils.load_clean_chorales(n_upload=20)
 
-	mh_algo = mh.PachetRoySopranoAlgo(
+	test_mh = mh.PachetRoySopranoAlgo(
 		chorales['Major'][1],
+	)
+	test_mh.run(100, True, plotting=False)
+
+	test_gibbs = gibbs.GibbsSampler(
+		test_mh.chorale,
+		test_mh.melody,
+		test_mh.bassline,
+		test_mh.chords,
+		vocal_range_dict={
+			'Alto' : (pitch.Pitch('g3'), pitch.Pitch('c5')),
+			'Tenor' : (pitch.Pitch('c3'), pitch.Pitch('e4')), 
+		},
+		conditional_dict={
+			'NC' : gibbs.NoCrossing('NC'),
+			'SWM' : gibbs.StepWiseMotion('SWM'),
+			'NPM' : gibbs.NoParallelMotion('NPM'),
+			'OM' : gibbs.OctaveMax('OM')
+		}
 	)
 
 	RS = random_search.RandomSearch(
 		np.random.choice(chorales['Major'], size=3),
-		mh_algo,
-		'MH'
+		test_gibbs,
+		'Gibbs'
 	)
 
 	RS_output = RS.run(
