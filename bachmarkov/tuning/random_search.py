@@ -86,48 +86,58 @@ class RandomSearch():
         """
         Abstract the running of each chorale so that process can be multithreaded
         """
-        if self.model_type == 'MH':
-            model_ = mh.MH(
-                test_chorale,
-                self.vocal_range,
-                self.function_dict,
-                weight_dict=self.weight_dict,
-                prop_chords = None,
-            )
-        else:
-            model_ = gibbs.GibbsSampler(
-                test_chorale,
-                extract_utils.to_crotchet_stream(test_chorale.parts['Soprano']),
-                extract_utils.to_crotchet_stream(test_chorale.parts['Bass']),
-                chord_utils.degrees_on_beats(test_chorale),
-                vocal_range_dict={
-                    'Alto' : (pitch.Pitch('g3'), pitch.Pitch('c5')),
-                    'Tenor' : (pitch.Pitch('c3'), pitch.Pitch('e4')), 
-                },
-                conditional_dict={
-                    'NC' : gibbs.NoCrossing('NC'),
-                    'SWM' : gibbs.StepWiseMotion('SWM'),
-                    'NPM' : gibbs.NoParallelMotion('NPM'),
-                    'OM' : gibbs.OctaveMax('OM')
-                },
-            )
-        
-        cd = convergence_diagnostics.ConvergenceDiagnostics(
-            model_,
-            self.model_type,
-            run_length,
-            'Tsang Aitken',
-            int(run_length / 2),
-            walkers,
-            tqdm_show=False,
-            plotting=False
-        )
+        # allow certain runs to fail but catch these
+        try:
+            if self.model_type == 'MH':
+                model_ = mh.MH(
+                    test_chorale,
+                    self.vocal_range,
+                    self.function_dict,
+                    weight_dict=self.weight_dict,
+                    prop_chords = None,
+                )
+            else:
+                model_ = gibbs.GibbsSampler(
+                    test_chorale,
+                    extract_utils.to_crotchet_stream(test_chorale.parts['Soprano']),
+                    extract_utils.to_crotchet_stream(test_chorale.parts['Bass']),
+                    chord_utils.degrees_on_beats(test_chorale),
+                    vocal_range_dict={
+                        'Alto' : (pitch.Pitch('g3'), pitch.Pitch('c5')),
+                        'Tenor' : (pitch.Pitch('c3'), pitch.Pitch('e4')), 
+                    },
+                    conditional_dict={
+                        'NC' : gibbs.NoCrossing('NC'),
+                        'SWM' : gibbs.StepWiseMotion('SWM'),
+                        'NPM' : gibbs.NoParallelMotion('NPM'),
+                        'OM' : gibbs.OctaveMax('OM')
+                    },
+                )
+                
+                cd = convergence_diagnostics.ConvergenceDiagnostics(
+                    model_,
+                    self.model_type,
+                    run_length,
+                    'Tsang Aitken',
+                    int(run_length / 2),
+                    walkers,
+                    tqdm_show=False,
+                    plotting=False
+                )
 
-        # run the profiler for the jth chorale
-        return {
-            'PSRF' : cd.PSRF,
-            'Score' : model_.run(run_length, True, False).iloc[-1],
-        }
+            # run the profiler for the jth chorale
+            return {
+                'PSRF' : cd.PSRF,
+                'Score' : model_.run(run_length, True, False).iloc[-1],
+            }
+
+        except Exception as e:
+
+            # run the profiler for the jth chorale
+            return {
+                'PSRF' : np.nan,
+                'Score' : model_.run(run_length, True, False).iloc[-1],
+            }
 
 
 
