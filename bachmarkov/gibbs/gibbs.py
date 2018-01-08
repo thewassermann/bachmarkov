@@ -459,7 +459,7 @@ class StepWiseMotion(ConditionalDistribution):
 			if tenor_intervals[i] > 4:
 				jumps += 1
 
-		return jumps / (2*len(alto))
+		return 1 - (jumps / (2*len(alto)))
 
 
 
@@ -528,7 +528,7 @@ class NoParallelMotion(ConditionalDistribution):
 				(motions.count(7) > 1):
 					parallel_motions += 1
 
-		return parallel_motions / len(soprano_intervals)
+		return 1 - (parallel_motions / len(soprano_intervals))
 
 
 class OctaveMax(ConditionalDistribution):
@@ -579,7 +579,7 @@ class OctaveMax(ConditionalDistribution):
 			if tenor_intervals[i] > 12:
 				octave_jumps += 1
 
-		return octave_jumps / (2*len(alto_intervals))
+		return 1 - (octave_jumps / (2*len(alto_intervals)))
 
 
 

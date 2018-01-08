@@ -29,9 +29,9 @@ class Embellisher():
 		self.fermata_layer = fermata_layer
 		self.key = parts_on_beats.analyze('key')
 		self.bass = bassline
-		self.soprano = self.run_part('Soprano')
-		self.alto = self.run_part('Alto')
-		self.tenor = self.run_part('Tenor')
+		self.run_part('Soprano')
+		self.run_part('Alto')
+		self.run_part('Tenor')
 
 	def return_chorale(self):
 		"""
@@ -65,10 +65,16 @@ class Embellisher():
 		embellishment_functions = list(self.rules_dict.keys())
 
 		for embellishment_function in embellishment_functions:
+
 			target_part = self.rules_dict[embellishment_function].embellish(self, target_part, target_part_name)
 
-		return target_part
-
+			# update parts
+			if target_part_name == 'Soprano':
+				self.soprano = target_part
+			elif target_part_name == 'Alto':
+				self.alto = target_part
+			elif target_part_name == 'Tenor':
+				self.tenor = target_part
 
 class Embellishment():
 
@@ -91,6 +97,17 @@ class FillInThirds(Embellishment):
 		# just notes and rests
 		target_part_flat = list(target_part.recurse(classFilter=('Note', 'Rest')))
 
+		# # update the fermata layer if needed:
+		# if len(target_part_flat) != len(embellisher.fermata_layer):
+		# 	sopr = list(embellisher.soprano.recurse(classFilter=('Note', 'Rest')))
+		# 	fermata_layer_update = []
+		# 	for idx in np.arange(len(sopr)):
+		# 		if sopr[idx].expressions == []:
+		# 			fermata_layer_update.append(0)
+		# 		else:
+		# 			fermata_layer_update.append(1)
+		# 	embellisher.fermata_layer = fermata_layer_update
+
 		# index to keep track of flattened part
 		note_index = 0
 
@@ -111,18 +128,22 @@ class FillInThirds(Embellishment):
 
 							# correct for rests
 							if (not isinstance(next_note, note.Rest)) and \
-								(embellisher.fermata_layer[note_index] == 0) and \
-								measure_el.duration.quarterLength == 1.:
+								(measure_el.duration.quarterLength == 1.) and \
+								(embellisher.fermata_layer[note_index] != 1):
 
 								interval_ = interval.notesToChromatic(measure_el, next_note).semitones
 								interval_dir = np.sign(interval_)
-								if (interval_ in set(np.multiply(interval_dir, [3,4]))) and (interval_dir != 0):
+
+								if (interval_ in set(np.multiply(interval_dir, [3,4]))) and \
+									(interval_dir != 0):
+
 									first_eighth = note.Note(measure_el.pitch, quarterLength=0.5)
 									generic_second = interval.GenericInterval(np.multiply(interval_dir, 2))
 									second_eighth_pitch = generic_second.transposePitchKeyAware(measure_el.pitch, embellisher.key)
 									second_eighth = note.Note(second_eighth_pitch, quarterLength=0.5)
 									m.insert(measure_el.offset, first_eighth)
 									m.insert(measure_el.offset + .5, second_eighth)
+
 								else:
 									m.insert(measure_el.offset, measure_el)
 							else:
