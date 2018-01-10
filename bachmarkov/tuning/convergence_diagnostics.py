@@ -104,7 +104,7 @@ class ConvergenceDiagnostics():
 			# Yu Mykland CUSUM plot
 			axs[2] = self.yu_mykland(axs[2], self.n_iter, mh_less_burnin)
 
-			fig.suptitle(self.model.chorale.metadata.title[:-4].upper(), y=1.02, fontsize=16)
+			# fig.suptitle(self.model.chorale.metadata.title[:-4].upper(), y=1.02, fontsize=16)
 			fig.tight_layout()
 
 		return PSRF

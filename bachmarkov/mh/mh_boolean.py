@@ -1,0 +1,653 @@
+from  music21 import *
+import numpy as np
+import pandas as pd
+from scipy.stats import chi2
+from scipy.stats.mstats import gmean
+
+from tqdm import trange
+import matplotlib.pyplot as plt
+
+import copy
+
+from utils import chord_utils, extract_utils, data_utils
+
+
+class MCMCBooleanSampler():
+    """
+    Implementation of the MCMC Boolean Sampler proposed by 
+    `An MCMC Sampler for Mixed Boolean/Integer Constraints`
+    by Kitchen and Keuhlmann
+    
+    Parameters
+    ----------
+    
+        bassline : stream.Part
+            True bassline of a Bach chorale
+    
+        vocal_range : tuple of pitch.Pitch
+            vocal range arranged (low, high) for the part
+            
+        chords : list of strings
+            chords with ordered pitches (e.g. `0/4/7`)
+    
+        constraint_dict : dictionary of `Constraints`
+            key : name of constraint, value : `Constraint` class
+            
+        T : numeric (float/int)
+            Corresponding to `temperature`, rate at which proposals are accepted
+            
+        ps : float between 0 and 1
+            Probability of performing a `metropolis_move` or a `local_search`
+    """
+    
+    def __init__(self, bassline, vocal_range, chords, constraint_dict, T, ps):
+        
+        self.bassline = extract_utils.to_crotchet_stream(bassline)
+        self.key = bassline.analyze('key')
+        self.vocal_range = vocal_range
+        self.chords = chords
+        self.constraint_dict = constraint_dict
+        self.T = T
+        self.ps = ps
+        self.soprano = self.init_melody()
+        
+        
+    def init_melody(self):
+        """
+        Function to initialize melody line with 
+        random sequence of notes within a vocal range
+        
+        Returns
+        -------
+
+            out_stream : music21.stream
+                part initialized to random note in the range
+
+        """
+        out_stream = stream.Stream()
+
+        # initialize index for chord list
+        chord_idx = 0
+
+        # loop through measures
+        for el in self.bassline.recurse(skipSelf=True):
+            if el == clef.BassClef():
+                out_stream.insert(clef.TrebleClef())
+            elif isinstance(el, instrument.Instrument):
+                out_stream.insert(instrument.Soprano())
+            elif isinstance(el, (stream.Measure)):
+                # select a random index for a semitone and add to outstream
+                m = stream.Measure()
+                for measure_el in el:
+                    if isinstance(measure_el, note.Note):
+                        out_note_choices =  chord_utils.random_note_in_chord_and_vocal_range(
+                            extract_utils.extract_notes_from_chord(self.chords[chord_idx]),
+                            self.key,
+                            self.vocal_range)
+                        out_note = np.random.choice(out_note_choices)
+                        m.insert(measure_el.offset, out_note)
+                    else:
+                        m.insert(measure_el.offset, note.Rest(quarterLength=1))
+                    chord_idx += 1
+                out_stream.insert(el.offset, m)
+            elif isinstance (el, (note.Note, note.Rest)):
+                continue
+            else:
+                out_stream.insert(el.offset, copy.deepcopy(el))
+
+        return out_stream
+        
+    
+    def run(self, n_iter, profiling, plotting=True):
+        """
+        Run the full Kitchen/Keuhlmann Algorithm
+        """
+        
+        # get length of the chorale
+        flat_chorale = list(self.soprano.recurse(classFilter=('Note', 'Rest')))
+        len_chorale = len(flat_chorale)
+        
+        # get index of rests 
+        no_rests_idxs = [x for x in np.arange(len_chorale) if not flat_chorale[x].isRest]
+        
+        # structure to store profiling data
+        if profiling:
+            profile_array = np.empty((n_iter, len(list(self.constraint_dict.keys()))))
+            profile_df = pd.DataFrame(profile_array)
+            profile_df.index = np.arange(n_iter)
+            profile_df.columns = list(self.constraint_dict.keys())
+        
+        #for i in trange(n_iter, desc='Iteration'):
+        for i in np.arange(n_iter):
+            
+            # choose a random index
+            
+            idx = np.random.choice(no_rests_idxs)
+            
+            # choose whether to local search or metropolis
+            if np.random.uniform() <= self.ps:
+                self.soprano = self.local_search(self.soprano, idx)
+            else:
+                # propose a note
+                possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+                    extract_utils.extract_notes_from_chord(self.chords[idx]),
+                    self.key,
+                    self.vocal_range
+                )
+                proposed_note = np.random.choice(possible_notes)
+                self.soprano = self.metropolis_move(self.soprano, proposed_note, idx)
+                
+                
+            # run the profiler
+            for k in list(self.constraint_dict.keys()):
+                profile_df.loc[i, k] = self.constraint_dict[k].profiling(self, self.soprano)
+                
+        #self.show_melody_bass()
+        
+        if profiling:
+
+            # print out marginal chain progression
+            if len(profile_df.columns) == 1:
+                profile_df.plot()
+            else:
+                # plot the results
+                row_num = int(np.ceil((len(profile_df.columns)) / 2))
+
+                # initialize row and column iterators
+                row = 0
+                col = 0
+                fig, axs = plt.subplots(row_num, 2, figsize=(12*row_num, 8))
+
+                for i in np.arange(len(profile_df.columns)):
+
+                    ax = np.array(axs).reshape(-1)[i]
+                    ax.plot(profile_df.index, profile_df.iloc[:,i])
+                    ax.set_xlabel('N iterations')
+                    ax.set_ylabel(profile_df.columns[i])
+                    ax.set_title(profile_df.columns[i])
+
+                    # get to next axis
+                    if i % 2 == 1:
+                        col += 1
+                    else:
+                        col = 0
+                        row += 1
+
+                # turn axis off if empty
+                if col == 0:
+                    np.array(axs).reshape(-1)[i+1].axis('off')
+
+                fig.tight_layout()
+                plt.show()
+
+
+            return profile_df.mean(axis=1)
+            #return profile_df
+        
+        
+    def show_melody_bass(self, show_command=None):
+        """
+        Function to show melody and bassline together
+        on a single system
+        """
+        melody = self.soprano
+        bass = self.bassline
+
+        # conjoin two parts and shows
+        s = stream.Score()
+        s.insert(0, stream.Part(melody))
+        s.insert(0, stream.Part(bass))
+        s.show(show_command)
+        
+
+    def metropolis_move(self, part_, proposed_note, index_):
+        """
+        Carry out the MetropolisMove algorithm as described by Kitchen/Keuhlmann
+        
+        Compare the chain with the proposed and current note. 
+        Then accept the proposed note with a particular acceptance probability 
+        """
+        
+        # turn part_ into a list
+        current_chain = list(part_.recurse(classFilter=('Note', 'Rest')))
+        
+        # create the proposal chain
+        proposed_chain = current_chain[:]
+        proposed_chain[index_] = proposed_note
+        
+        # get number of constraints unsatisfied with current and proposed chains
+        proposed_constraints = \
+            [constraint.not_satisfied(self, proposed_chain, index_) for constraint in list(self.constraint_dict.values())]
+        current_constraints = \
+            [constraint.not_satisfied(self, current_chain, index_) for constraint in list(self.constraint_dict.values())]
+            
+        proposed_constaints_count = np.nansum(proposed_constraints)
+        current_constaints_count = np.nansum(current_constraints)
+        
+        # acceptance probability
+        p = np.nanmin(
+            [
+                1,
+                np.exp(-(proposed_constaints_count - current_constaints_count)/ self.T)
+            ]
+        )
+        
+        # accept with probability p
+        if np.random.uniform() <= p:
+            return extract_utils.flattened_to_stream(
+                proposed_chain,
+                self.bassline,
+                stream.Stream(),
+                'Soprano'
+            )
+        else:
+            return part_
+    
+    
+    def local_search(self, part_, index_):
+        """
+        Carry out the LocalSearch algorithm as described by Kitchen/Keuhlmann
+        
+        Search through the possible notes and select the note that does not satisfy
+        the least number of constraints (a.k.a satisfies the most)
+        """
+        
+        possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+            extract_utils.extract_notes_from_chord(self.chords[index_]),
+            self.key,
+            self.vocal_range
+        )
+        
+        # has possible notes in dict as note.Note is an unhashable type
+        possible_dict = {n.nameWithOctave : n for n in possible_notes}
+        
+        # loop through possible notes and 
+        # see which one satisfies the most constraints
+        note_constraints_dict = {}
+        for note in possible_notes:
+            
+            # create chain including possible note
+            possible_chain = list(part_.recurse(classFilter=('Note', 'Rest')))
+            possible_chain[index_] = note
+            
+            constraints_not_met = \
+                [constraint.not_satisfied(self, possible_chain, index_) for constraint in list(self.constraint_dict.values())]
+            note_constraints_dict[note.nameWithOctave] = np.nansum(constraints_not_met)
+            
+        # get best possible note from possible notes
+        best_note = possible_dict[min(note_constraints_dict, key=note_constraints_dict.get)]
+        
+        # if a tie between best notes
+        # TODO
+        
+        new_chain = list(part_.recurse(classFilter=('Note', 'Rest')))
+        new_chain[index_] = best_note
+        return extract_utils.flattened_to_stream(
+            new_chain,
+            self.bassline,
+            stream.Stream(),
+            'Soprano'
+        )
+        
+        
+class Constraint():
+    """
+    Superclass for constraints. `Constraint`s
+    return a boolean value:
+        - 1 if the `Constraint` is unsatisfied
+        - 0 if the `Constraint` is satisfied
+    """
+    
+    def __init__(self, name):
+        self.name = name
+    
+    def not_satisfied(self):
+        pass
+    
+    def profiling(self):
+        pass
+
+
+class NoIllegalJumps(Constraint):
+    """
+    Constraint function to discourage illegal jumps (aug/dim intervals)
+    before and after the note
+    """
+    
+    def not_satisfied(self, MCMC, chain, index_):
+        
+        proposed_note = chain[index_] 
+        
+        # if at first note -> just interval after
+        if index_ == 0:
+            
+            next_note = chain[index_ + 1]
+            
+            # if next note is not a rest
+            if not isinstance(next_note, (note.Rest)) and \
+                (self.is_illegal(proposed_note, next_note) == 1):
+                return 1
+            else:
+                return 0
+            
+        # if at last note -> just interval before
+        elif index_ == len(chain) - 1:
+            
+            previous_note = chain[index_ - 1]
+            
+            # if previous note is not a rest
+            if not isinstance(previous_note, (note.Rest)) and \
+                (self.is_illegal(previous_note, proposed_note) == 1):
+                return 1
+            else:
+                return 0
+            
+        else:
+            
+            previous_note = chain[index_ - 1]
+            next_note = chain[index_ + 1]
+            
+            # assuming neither 
+            if (not isinstance(previous_note, (note.Rest)) and \
+                (self.is_illegal(previous_note, proposed_note) == 1)) or \
+                (not isinstance(next_note, (note.Rest)) and \
+                (self.is_illegal(proposed_note, next_note) == 1)):
+                return 1
+            else:
+                return 0
+            
+    def profiling(self, MCMC, line):
+        """
+        Profile the marginal progress of this constraint
+        """
+        
+        line = list(line.recurse(classFilter=('Note', 'Rest')))
+        
+        out_stream = []
+        for i in np.arange(len(line)):
+            out_stream.append(self.not_satisfied(MCMC, line, i))
+            
+        return 1 - (np.nansum(out_stream) / len(out_stream))
+            
+            
+    def is_illegal(self, note_1, note_2):
+        """
+        Helper function to see if the interval between two notes is augmented or diminished
+        
+        Parameters
+        ----------
+        
+            note_1 : note.Note
+            note_2 : note.Note
+            
+        Returns
+        -------
+        
+            bool
+        """
+        
+        int_type_identifier = interval.Interval(note_1.pitch, note_2.pitch).name[0]
+        
+        # if augmented or diminished interval
+        if int_type_identifier in set(['a', 'd']):
+            return 1
+        else:
+            return 0
+        
+        
+
+class NoParallelIntervals(Constraint):
+    """
+    Ensure that there are no parallel octaves and fifths
+    """
+    
+    def not_satisfied(self, MCMC, chain, index_):
+        
+        bass = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
+        
+        proposed_note = chain[index_] 
+        
+        # if at first note -> just intervals during and after
+        if index_ == 0:
+            
+            # get the notes needed
+            proposed_note_bass = bass[index_]
+            next_note_melody = chain[index_ + 1]
+            next_note_bass = bass[index_ + 1]
+            
+            bass_ = [proposed_note_bass, next_note_bass]
+            melody_ = [proposed_note, next_note_melody]
+            
+            # if current and next note is not a rest
+            if not isinstance(next_note_bass, (note.Rest)) and \
+                (self.is_parallel(bass_, melody_) == 1):
+                return 1
+            else:
+                return 0
+            
+        # if at last note -> just interval before
+        elif index_ == len(chain) - 1:
+            
+            # get the notes needed
+            previous_note_melody = chain[index_ - 1]
+            previous_note_bass = bass[index_ - 1]
+            proposed_note_bass = bass[index_]
+            
+            bass_ = [previous_note_bass, proposed_note_bass]
+            melody_ = [previous_note_melody, proposed_note]
+                        
+            # if previous note is not a rest
+            if not isinstance(previous_note_bass, (note.Rest)) and \
+                (self.is_parallel(bass_, melody_) == 1):
+                return 1
+            else:
+                return 0
+            
+        else:
+            
+            # get notes needed
+            next_note_melody = chain[index_ + 1]
+            next_note_bass = bass[index_ + 1]
+            previous_note_melody = chain[index_ - 1]
+            previous_note_bass = bass[index_ - 1]
+            proposed_note_bass = bass[index_]
+            
+            first_bass = [previous_note_bass, proposed_note_bass]
+            second_bass = [proposed_note_bass, next_note_bass]
+            first_melody = [previous_note_melody, proposed_note]
+            second_melody = [proposed_note, next_note_melody]
+            
+            
+            # assuming neither 
+            if (not isinstance(previous_note_bass, (note.Rest)) and \
+                not isinstance(next_note_bass, (note.Rest))) and \
+                ((self.is_parallel(first_bass, first_melody) == 1) or \
+                (self.is_parallel(second_bass, second_melody) == 1)):
+                return 1
+            else:
+                return 0
+            
+    def profiling(self, MCMC, line):
+        
+        bass = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
+        melody = list(line.recurse(classFilter=('Note', 'Rest')))
+        
+        parallel_movements = 0
+        for i in np.arange(1, len(melody)):
+            
+            prev_melody = melody[i - 1]
+            prev_bass = bass[i - 1]
+            
+            curr_melody = melody[i]
+            curr_bass = bass[i]
+            
+            melody_ = [prev_melody, curr_melody]
+            bass_ = [prev_bass, curr_bass]
+            
+            if self.is_parallel(bass_, melody_) == 1:
+                parallel_movements += 1
+            
+        return 1 - (parallel_movements / (len(melody) - 1))
+        
+    
+    def is_parallel(self, bass_line, melody_line):
+        """
+        Check if there is parallel motion in octaves or fifths
+        in a line of notes
+        """
+        
+        first_interval = interval.notesToChromatic(bass_line[0], melody_line[0]).semitones % 12
+        second_interval = interval.notesToChromatic(bass_line[1], melody_line[1]).semitones % 12
+        
+        if (first_interval == second_interval) and (second_interval in set([0, 7])):
+            return 1
+        else:
+            return 0
+        
+        
+class ContraryMotion(Constraint):
+    """
+    Prefer contrary motion between soprano and bass
+    """
+    def not_satisfied(self, MCMC, chain, index_):
+        
+        bass = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
+        
+        proposed_note = chain[index_]
+        
+        # if at first note -> just intervals during and after
+        if index_ == 0:
+            
+            # get the notes needed
+            proposed_note_bass = bass[index_]
+            next_note_melody = chain[index_ + 1]
+            next_note_bass = bass[index_ + 1]
+            
+            bass_ = [proposed_note_bass, next_note_bass]
+            melody_ = [proposed_note, next_note_melody]
+            
+            # if current and next note is not a rest
+            if not isinstance(next_note_bass, (note.Rest)) and \
+                (self.not_contrary(bass_, melody_) == 1):
+                return 1
+            else:
+                return 0
+            
+        # if at last note -> just interval before
+        else:
+            # get the notes needed
+            previous_note_melody = chain[index_ - 1]
+            previous_note_bass = bass[index_ - 1]
+            proposed_note_bass = bass[index_]
+            
+            bass_ = [previous_note_bass, proposed_note_bass]
+            melody_ = [previous_note_melody, proposed_note]
+                        
+            # if previous note is not a rest
+            if not isinstance(previous_note_bass, (note.Rest)) and \
+                (self.not_contrary(bass_, melody_) == 1):
+                return 1
+            else:
+                return 0
+        
+    
+    def profiling(self, MCMC, line):
+        
+        bass = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
+        soprano = list(line.recurse(classFilter=('Note', 'Rest')))
+        
+        bass_intervals = extract_utils.get_intervals(bass)
+        soprano_intervals = extract_utils.get_intervals(soprano)
+        
+        contrary_count = 0
+        for i in np.arange(len(bass_intervals)):
+            if np.sign(bass_intervals[i]) == -np.sign(soprano_intervals[i]):
+                contrary_count += 1
+        return contrary_count / len(soprano_intervals)
+    
+    
+    def not_contrary(self, bass_line, melody_line):
+        """
+        Check if there is contrary motion in the bass and melody
+        """
+        
+        first_dir = np.sign(interval.notesToChromatic(melody_line[0], melody_line[1]).semitones)
+        second_dir = np.sign(interval.notesToChromatic(bass_line[0], bass_line[1]).semitones)
+        
+        if first_dir == -second_dir:
+            return 0
+        else:
+            return 1
+
+
+class NoteToTonic(Constraint):
+    """
+    Each leading note and supertonic should rise/fall
+    respectively to the tonic
+    """
+    
+    def not_satisfied(self, MCMC, chain, index_):
+        
+        tonic = MCMC.key.getTonic()
+        
+        # impossible for final note to lead
+        if index_ == len(chain) - 1:
+            return 0
+        
+        proposed_note = chain[index_]
+        next_note = chain[index_ + 1]
+        
+        if (index_ <= len(chain) - 1) and \
+            (not isinstance(next_note, (note.Rest))) and \
+            (self.does_not_lead(proposed_note, next_note, tonic) == 1):
+            return 1
+        else:
+            return 0
+            
+    def profiling(self, MCMC, line):
+        """
+        Profile the marginal progress of this constraint
+        """
+        
+        tonic = MCMC.key.getTonic()
+        
+        line = list(line.recurse(classFilter=('Note', 'Rest')))
+        line_degrees = [(n.pitch.pitchClass - tonic.pitchClass) % 12 for n in line if not n.isRest]
+        
+        # initialize to 1 to prevent from dividing by 0
+        leading_tones = 1
+        leading_tones_resolved = 1
+        for i in np.arange(len(line_degrees)):
+            
+            # if a leading note found
+            if line_degrees[i] in set([1,2,10,11]) and i <= len(line_degrees) - 1:
+                leading_tones += 1
+                
+                # if that note is resolved
+                if line_degrees[i + 1] == tonic.pitchClass:
+                    leading_tones_resolved += 1
+                
+        return leading_tones_resolved / leading_tones
+            
+            
+    def does_not_lead(self, note_1, note_2, tonic_pitch):
+        """
+        Function to return 1 if `note_1` is a supertonic or
+        leading note and `note_2` is NOT a tonic, else 0
+        
+        Parameters
+        ----------
+        
+            note_1 : note.Note
+            note_2 : note.Note
+            tonic_pitch : pitch.Pitch
+        """
+        
+        # if note_1 is a supertonic or leading note and note_2 is a tonic
+        if ((note_1.pitch.pitchClass - tonic_pitch.pitchClass) % 12 in set([1,2,10,11])) and \
+            (note_1.pitch.pitchClass != tonic_pitch.pitchClass):
+            return 1             
+        else:
+            return 0
+
+        
