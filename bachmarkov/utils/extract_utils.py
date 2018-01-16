@@ -100,14 +100,18 @@ def flattened_to_stream(flat, bassline, out_stream, part_, fermata_layer=None):
 			# get length of measure
 			measure_length = el.duration.quarterLength
 
-			length_couter = 0
+			length_counter = 0
 
 			for note_ in flat[note_index:]:
 
+				if fermata_layer is not None:
+					if (fermata_layer[note_index] == 1) and (note_.expressions == []):
+						note_.expressions.append(expressions.Fermata())
+
 				# check if adding would exceed measure_length
-				if note_.duration.quarterLength + length_couter <= measure_length:
-					m.insert(length_couter, copy.deepcopy(note_))
-					length_couter += flat[note_index].duration.quarterLength
+				if note_.duration.quarterLength + length_counter <= measure_length:
+					m.insert(length_counter, copy.deepcopy(note_))
+					length_counter += flat[note_index].duration.quarterLength
 					note_index += 1
 				else:
 					break
