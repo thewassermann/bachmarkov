@@ -32,24 +32,51 @@ class MCMCBooleanSampler():
     
         constraint_dict : dictionary of `Constraints`
             key : name of constraint, value : `Constraint` class
+
+        fermata_layer : list of booleans
+            1 if there is a fermata on that beat index, 0 otherwise
             
         T : numeric (float/int)
-            Corresponding to `temperature`, rate at which proposals are accepted
+            Corresponding to `temperature`, rate at which proposals are accepted.
+            This is actually the inital value of T, which is altered via self.simulated_annealing()
+
+        alpha : float between 0 and 1
+            Parameter governing cooling schedule of T
+            Suggested to be between 0.85 and 0.96
             
         ps : float between 0 and 1
             Probability of performing a `metropolis_move` or a `local_search`
+
+        weight_dict : dictionary of floats
+            key : name of constraint, value : float
     """
     
-    def __init__(self, bassline, vocal_range, chords, constraint_dict, T, ps):
+    def __init__(self, bassline, vocal_range, chords, constraint_dict, fermata_layer, T, alpha, ps, weight_dict=None):
         
         self.bassline = extract_utils.to_crotchet_stream(bassline)
         self.key = bassline.analyze('key')
         self.vocal_range = vocal_range
         self.chords = chords
         self.constraint_dict = constraint_dict
+        self.T_0 = T
         self.T = T
+        self.alpha = alpha
         self.ps = ps
         self.soprano = self.init_melody()
+        self.fermata_layer = fermata_layer
+        self.weight_dict = self.set_weight_dict(weight_dict)
+
+
+    def set_weight_dict(self, weight_dict):
+        """
+        Function to normalize the weight dict so that the entries 
+        retain proportion but sum to 1
+        """
+        if weight_dict is None:
+            return None
+        else:
+            wd_sum = np.nansum(list(weight_dict.values()))
+            return {k: weight_dict[k]/wd_sum for k in list(weight_dict.keys())}
         
         
     def init_melody(self):
@@ -141,10 +168,13 @@ class MCMCBooleanSampler():
             # run the profiler
             for k in list(self.constraint_dict.keys()):
                 profile_df.loc[i, k] = self.constraint_dict[k].profiling(self, self.soprano)
+
+            # simulated annealing step
+            self.simulated_annealing(i, self.T_0)
                 
         #self.show_melody_bass()
         
-        if profiling:
+        if profiling and plotting:
 
             # print out marginal chain progression
             if len(profile_df.columns) == 1:
@@ -180,9 +210,13 @@ class MCMCBooleanSampler():
                 fig.tight_layout()
                 plt.show()
 
+            # return the whole df
+            # return profile_df
 
-            return profile_df.mean(axis=1)
-            #return profile_df
+        if profiling:
+            # return profile_df.mean(axis=1)
+            # return the whole df
+            return profile_df
         
         
     def show_melody_bass(self, show_command=None):
@@ -195,6 +229,17 @@ class MCMCBooleanSampler():
 
         # conjoin two parts and shows
         s = stream.Score()
+
+        out_stream = stream.Stream()
+        soprano_flat = list(melody.recurse(classFilter=('Note', 'Rest')))
+        melody = extract_utils.flattened_to_stream(
+            soprano_flat,
+            self.bassline,
+            out_stream,
+            'Soprano',
+            self.fermata_layer
+        )
+
         s.insert(0, stream.Part(melody))
         s.insert(0, stream.Part(bass))
         s.show(show_command)
@@ -216,10 +261,18 @@ class MCMCBooleanSampler():
         proposed_chain[index_] = proposed_note
         
         # get number of constraints unsatisfied with current and proposed chains
-        proposed_constraints = \
-            [constraint.not_satisfied(self, proposed_chain, index_) for constraint in list(self.constraint_dict.values())]
-        current_constraints = \
-            [constraint.not_satisfied(self, current_chain, index_) for constraint in list(self.constraint_dict.values())]
+        if self.weight_dict is None:
+            proposed_constraints = \
+                [self.constraint_dict[k].not_satisfied(self, proposed_chain, index_) for k in list(self.constraint_dict.keys())]
+            current_constraints = \
+                [self.constraint_dict[k].not_satisfied(self, current_chain, index_) for k in list(self.constraint_dict.keys())]
+        else:
+            proposed_constraints = \
+                [self.constraint_dict[k].not_satisfied(self, proposed_chain, index_) * \
+                    self.weight_dict[k] for k in list(self.constraint_dict.keys())]
+            current_constraints = \
+                [self.constraint_dict[k].not_satisfied(self, current_chain, index_) * \
+                    self.weight_dict[k] for k in list(self.constraint_dict.keys())]      
             
         proposed_constaints_count = np.nansum(proposed_constraints)
         current_constaints_count = np.nansum(current_constraints)
@@ -270,8 +323,14 @@ class MCMCBooleanSampler():
             possible_chain = list(part_.recurse(classFilter=('Note', 'Rest')))
             possible_chain[index_] = note
             
-            constraints_not_met = \
-                [constraint.not_satisfied(self, possible_chain, index_) for constraint in list(self.constraint_dict.values())]
+            if self.weight_dict is None:
+                constraints_not_met = \
+                    [self.constraint_dict[k].not_satisfied(self, possible_chain, index_) for k in list(self.constraint_dict.keys())]
+            else:
+                constraints_not_met = \
+                    [self.constraint_dict[k].not_satisfied(self, possible_chain, index_) * \
+                        self.weight_dict[k] for k in list(self.constraint_dict.keys())]
+
             note_constraints_dict[note.nameWithOctave] = np.nansum(constraints_not_met)
             
         # get best possible note from possible notes
@@ -288,6 +347,24 @@ class MCMCBooleanSampler():
             stream.Stream(),
             'Soprano'
         )
+
+
+    def simulated_annealing(self, iter_, T_0):
+        """
+        Function to cool T up to a certain level
+        """
+        if self.T > .1:
+            self.T = self.alpha * self.T
+
+        # lower bound to confirm convergence
+        # if self.T > .01:
+        #     self.T = T_0 / np.log(2 + iter_)
+
+        # cauchy 
+        # if self.T >.1:
+        #     self.T = T_0 / iter_
+
+
         
         
 class Constraint():
@@ -361,7 +438,7 @@ class NoIllegalJumps(Constraint):
         Profile the marginal progress of this constraint
         """
         
-        line = list(line.recurse(classFilter=('Note', 'Rest')))
+        line = list(line.recurse(classFilter=('Note')))
         
         out_stream = []
         for i in np.arange(len(line)):
@@ -469,8 +546,8 @@ class NoParallelIntervals(Constraint):
             
     def profiling(self, MCMC, line):
         
-        bass = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
-        melody = list(line.recurse(classFilter=('Note', 'Rest')))
+        bass = list(MCMC.bassline.recurse(classFilter=('Note')))
+        melody = list(line.recurse(classFilter=('Note')))
         
         parallel_movements = 0
         for i in np.arange(1, len(melody)):
@@ -511,7 +588,7 @@ class ContraryMotion(Constraint):
     """
     def not_satisfied(self, MCMC, chain, index_):
         
-        bass = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
+        bass = list(MCMC.bassline.recurse(classFilter=('Note')))
         
         proposed_note = chain[index_]
         
@@ -544,7 +621,7 @@ class ContraryMotion(Constraint):
             melody_ = [previous_note_melody, proposed_note]
                         
             # if previous note is not a rest
-            if not isinstance(previous_note_bass, (note.Rest)) and \
+            if (not isinstance(previous_note_bass, (note.Rest))) and \
                 (self.not_contrary(bass_, melody_) == 1):
                 return 1
             else:
@@ -553,8 +630,8 @@ class ContraryMotion(Constraint):
     
     def profiling(self, MCMC, line):
         
-        bass = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
-        soprano = list(line.recurse(classFilter=('Note', 'Rest')))
+        bass = list(MCMC.bassline.recurse(classFilter=('Note')))
+        soprano = list(line.recurse(classFilter=('Note')))
         
         bass_intervals = extract_utils.get_intervals(bass)
         soprano_intervals = extract_utils.get_intervals(soprano)
@@ -611,13 +688,13 @@ class NoteToTonic(Constraint):
         
         tonic = MCMC.key.getTonic()
         
-        line = list(line.recurse(classFilter=('Note', 'Rest')))
+        line = list(line.recurse(classFilter=('Note')))
         line_degrees = [(n.pitch.pitchClass - tonic.pitchClass) % 12 for n in line if not n.isRest]
         
         # initialize to 1 to prevent from dividing by 0
         leading_tones = 1
         leading_tones_resolved = 1
-        for i in np.arange(len(line_degrees)):
+        for i in np.arange(len(line_degrees)-1):
             
             # if a leading note found
             if line_degrees[i] in set([1,2,10,11]) and i <= len(line_degrees) - 1:
@@ -649,5 +726,201 @@ class NoteToTonic(Constraint):
             return 1             
         else:
             return 0
+
+
+class LeapThenStep(Constraint):
+    """
+    If there is a leap by more than a fourth, follow this by a step
+    """
+    
+    def not_satisfied(self, MCMC, chain, index_):
+        
+        
+        # impossible for final note to lead
+        if index_ >= len(chain) - 2:
+            return 0
+        
+        proposed_note = chain[index_]
+        next_note = chain[index_ + 1]
+        last_note = chain[index_ + 2]
+        
+        if (index_ < len(chain) - 2) and \
+            (not isinstance(next_note, (note.Rest))) and \
+            (not isinstance(last_note, (note.Rest))) and \
+            (self.does_not_step_after_leap(proposed_note, next_note, last_note) == 1):
+            return 1
+        else:
+            return 0
+            
+    def profiling(self, MCMC, line):
+        """
+        Profile the marginal progress of this constraint
+        """
+        
+        line = list(line.recurse(classFilter=('Note')))
+        
+        # initialize to 1 to prevent division by 0
+        jumps = 1
+        jumps_not_followed_by_step = 1
+        for i in np.arange(len(line) - 2):
+            
+            if abs(interval.notesToChromatic(line[i], line[i + 1]).semitones) > 4:
+                
+                # jump
+                jumps += 1
+                
+                # check if jump is followed by a step
+                if self.does_not_step_after_leap(line[i], line[i + 1], line[i + 2]) == 1:
+                    jumps_not_followed_by_step += 1
+            
+        return 1 - (jumps_not_followed_by_step / jumps)
+            
+            
+    def does_not_step_after_leap(self, note_1, note_2, note_3):
+        """
+        Function to return 1 if
+            -> the interval between `note_1` and `note_2` is greater than
+            a fourth and the interval between `note_2` and `note_3` is not a step
+        
+        Parameters
+        ----------
+        
+            note_1 : note.Note
+            note_2 : note.Note
+            note_3 : note.Note
+        """
+        
+        first_interval = abs(interval.notesToChromatic(note_1, note_2).semitones)
+        second_interval = abs(interval.notesToChromatic(note_2, note_3).semitones)
+        
+        
+        # if note_1 is a supertonic or leading note and note_2 is a tonic
+        if (first_interval > 4) and (second_interval >= 2):
+            return 1             
+        else:
+            return 0
+
+
+class ReduceRepeated(Constraint):
+    """
+    Constraint which encourages movement in the soprano part
+    """
+    
+    def not_satisfied(self, MCMC, chain, index_):
+        
+        proposed_note = chain[index_] 
+        
+        # if at first note -> just interval after
+        if index_ == 0:
+            
+            next_note = chain[index_ + 1]
+            
+            # if next note is not a rest
+            if not isinstance(next_note, (note.Rest)) and \
+                (self.is_repeated(proposed_note, next_note) == 1):
+                return 1
+            else:
+                return 0
+        
+        else:
+            
+            previous_note = chain[index_ - 1]
+            
+            if not isinstance(previous_note, (note.Rest)) and \
+                (self.is_repeated(previous_note, proposed_note) == 1):
+                return 1
+            else:
+                return 0
+            
+    def profiling(self, MCMC, line):
+        
+        line = list(line.recurse(classFilter=('Note')))
+        
+        profile_array = np.empty((len(line) - 1,))
+        for i in np.arange(1, len(line)):
+            profile_array[i-1] = self.is_repeated(line[i-1], line[i])
+            
+        return 1 - np.nansum(profile_array) / (len(line) - 1)
+            
+    
+    def is_repeated(self, note_1, note_2):
+        """
+        Function that returns 1 if `note_1` and `note_2` have the same pitch
+        
+        Parameters
+        ----------
+        
+            note_1 : note.Note
+            note_2 : note.Note
+        """
+        
+        if note_1.pitch.name == note_2.pitch.name:
+            return 1
+        else:
+            return 0
+
+
+class MovementWithinThird(Constraint):
+    """ 
+    Constraint designed to reduce large jumps
+    """
+
+    def not_satisfied(self, MCMC, chain, index_):
+        
+        proposed_note = chain[index_]
+
+        # if final index check previous note
+        if index_ == len(chain) - 1:
+            previous_note = chain[index_ - 1]
+
+            if (not isinstance(previous_note, (note.Rest))) and \
+                (self.more_than_third(previous_note, proposed_note) == 1):
+                return 1
+            else:
+                return 0
+        
+        else:
+            next_note = chain[index_ + 1]
+            
+            if (not isinstance(next_note, (note.Rest))) and \
+                (self.more_than_third(proposed_note, next_note) == 1):
+                return 1
+            else:
+                return 0
+            
+    def profiling(self, MCMC, line):
+        """
+        Profile the marginal progress of this constraint
+        """
+        
+        
+        line = list(line.recurse(classFilter=('Note')))
+        
+        jumps = 0
+        for i in np.arange(len(line)-1):
+            if abs(interval.notesToChromatic(line[i], line[i + 1]).semitones) > 4:
+                jumps += 1
+                
+        return 1 - (jumps / (len(line)-1))
+            
+            
+    def more_than_third(self, note_1, note_2):
+        """
+        Function to return 1 if the interval between `note_1` and
+        `note_2` is larger than a major third and 0 otherwise
+        
+        Parameters
+        ----------
+        
+            note_1 : note.Note
+            note_2 : note.Note
+        """
+        
+        # if note_1 is a supertonic or leading note and note_2 is a tonic
+        if abs(interval.notesToChromatic(note_1, note_2).semitones) > 4:
+            return 1
+        else:
+            return 0
+
 
         
