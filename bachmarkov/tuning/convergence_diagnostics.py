@@ -118,10 +118,10 @@ class ConvergenceDiagnostics():
 		if self.model_type == 'MH':
 			self.model.init_melody()
 		else:
-			self.model.alto = self.model.init_part('Alto', self.model.alto_range, self.model.chords)
-			self.model.tenor = self.model.init_part('Tenor', self.model.tenor_range, self.model.chords)
+			self.model.alto = self.model.init_part('Alto', self.model.vocal_range_dict['Alto'], self.model.chords)
+			self.model.tenor = self.model.init_part('Tenor', self.model.vocal_range_dict['Tenor'], self.model.chords)
 
-		return self.model.run(self.n_iter, profiling=True, plotting=False).values.flatten()
+		return np.nanmean(self.model.run(self.n_iter, profiling=True, plotting=False).values, axis=1).flatten()
 
 
 

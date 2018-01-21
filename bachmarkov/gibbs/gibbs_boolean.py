@@ -396,10 +396,10 @@ class NoCrossing(GibbsConstraint):
 
 	def profiling(self, MCMC):
 
-		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note', 'Rest')))
-		alto_ = list(MCMC.alto.recurse(classFilter=('Note', 'Rest')))
-		tenor_ = list(MCMC.tenor.recurse(classFilter=('Note', 'Rest')))
-		bass_ = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
+		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note')))
+		alto_ = list(MCMC.alto.recurse(classFilter=('Note')))
+		tenor_ = list(MCMC.tenor.recurse(classFilter=('Note')))
+		bass_ = list(MCMC.bassline.recurse(classFilter=('Note')))
 
 		crossing_count = 0
 		for i in np.arange(len(soprano_)):
@@ -567,6 +567,68 @@ class NoParallelIntervals(GibbsConstraint):
 			return 1
 		else:
 			return 0
+
+
+class FillInChord(GibbsConstraint):
+	pass
+
+
+class OctaveMax(GibbsConstraint):
+	"""
+	Returns 1 if soprano/alto/tenor parts more than an octave apart
+	"""
+
+	def not_satisfied(self, MCMC, chain, index_, part_name):
+
+		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note', 'Rest')))
+
+		if isinstance(soprano_[index_], note.Rest):
+			return 0
+
+
+		if part_name == 'Alto':
+			alto_ = chain
+			tenor_ = list(MCMC.tenor.recurse(classFilter=('Note', 'Rest')))
+
+			if (self.octave_plus(alto_[index_], soprano_[index_]) == 1) or \
+				(self.octave_plus(tenor_[index_], alto_[index_]) == 1):
+				return 1
+			else:
+				return 0
+		else:
+			alto_ = list(MCMC.alto.recurse(classFilter=('Note', 'Rest')))
+			tenor_ = chain
+
+			if self.octave_plus(tenor_[index_], alto_[index_]) == 1:
+				return 1
+			else:
+				return 0
+
+
+	def profiling(self, MCMC):
+
+		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note')))
+		alto_ = list(MCMC.alto.recurse(classFilter=('Note')))
+		tenor_ = list(MCMC.tenor.recurse(classFilter=('Note')))
+
+		more_than_octave = 0
+		for i in np.arange(len(soprano_)):
+
+			if (self.octave_plus(alto_[i], soprano_[i]) == 1) or \
+				(self.octave_plus(tenor_[i], alto_[i]) == 1):
+				more_than_octave += 1
+
+		return 1 - (more_than_octave / len(soprano_))
+
+
+	def octave_plus(self, note_1, note_2):
+
+		if abs(interval.notesToChromatic(note_1, note_2).semitones) > 12:
+			return 1
+		else:
+			return 0
+
+
 
 
 

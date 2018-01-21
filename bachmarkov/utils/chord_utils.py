@@ -89,11 +89,17 @@ def random_note_in_chord_and_vocal_range(relPitchList, key, vocal_range):
 	Function to return a random note in the chord within a given range
 	"""
 
+	# for rests, can only be a rest
+	if relPitchList == -1:
+		return [note.Rest()]
+
 	# extract_range
 	lowest_note, highest_note = vocal_range
 
 	# turn relative Pitch into a note.Note
-	notes = [] 
+	notes = []
+
+
 	for relPitch in relPitchList:
 		if relPitch != 0:
 			interval_ = interval.ChromaticInterval(relPitch)
@@ -107,8 +113,8 @@ def random_note_in_chord_and_vocal_range(relPitchList, key, vocal_range):
 	for n in notes:
 
 		# possible octaves
-		low_octave = n.pitch.transposeAboveTarget(lowest_note).octave
-		high_octave = n.pitch.transposeBelowTarget(highest_note).octave
+		low_octave = n.pitch.transposeAboveTarget(lowest_note).octave - 1
+		high_octave = n.pitch.transposeBelowTarget(highest_note).octave + 1
         
 		# select random octave
 		# if only one choice available
@@ -124,3 +130,4 @@ def random_note_in_chord_and_vocal_range(relPitchList, key, vocal_range):
 		octave_corrected_notes.append(n)
         
 	return octave_corrected_notes
+

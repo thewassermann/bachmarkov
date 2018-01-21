@@ -16,4 +16,5 @@ scikit-learn==0.19.0
 scipy==0.19.1
 scs==1.2.6
 seaborn==0.7.1
+statsmodels
 tqdm==4.11.2

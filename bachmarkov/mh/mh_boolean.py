@@ -148,7 +148,6 @@ class MCMCBooleanSampler():
         for i in np.arange(n_iter):
             
             # choose a random index
-            
             idx = np.random.choice(no_rests_idxs)
             
             # choose whether to local search or metropolis
@@ -317,11 +316,11 @@ class MCMCBooleanSampler():
         # loop through possible notes and 
         # see which one satisfies the most constraints
         note_constraints_dict = {}
-        for note in possible_notes:
+        for note_ in possible_notes:
             
             # create chain including possible note
             possible_chain = list(part_.recurse(classFilter=('Note', 'Rest')))
-            possible_chain[index_] = note
+            possible_chain[index_] = note_
             
             if self.weight_dict is None:
                 constraints_not_met = \
@@ -331,7 +330,7 @@ class MCMCBooleanSampler():
                     [self.constraint_dict[k].not_satisfied(self, possible_chain, index_) * \
                         self.weight_dict[k] for k in list(self.constraint_dict.keys())]
 
-            note_constraints_dict[note.nameWithOctave] = np.nansum(constraints_not_met)
+            note_constraints_dict[note_.nameWithOctave] = np.nansum(constraints_not_met)
             
         # get best possible note from possible notes
         best_note = possible_dict[min(note_constraints_dict, key=note_constraints_dict.get)]
@@ -393,8 +392,8 @@ class NoIllegalJumps(Constraint):
     
     def not_satisfied(self, MCMC, chain, index_):
         
-        proposed_note = chain[index_] 
-        
+        proposed_note = chain[index_]
+
         # if at first note -> just interval after
         if index_ == 0:
             
@@ -462,7 +461,6 @@ class NoIllegalJumps(Constraint):
         
             bool
         """
-        
         int_type_identifier = interval.Interval(note_1.pitch, note_2.pitch).name[0]
         
         # if augmented or diminished interval
@@ -533,11 +531,11 @@ class NoParallelIntervals(Constraint):
             second_bass = [proposed_note_bass, next_note_bass]
             first_melody = [previous_note_melody, proposed_note]
             second_melody = [proposed_note, next_note_melody]
-            
+
+            notes = [next_note_melody, next_note_bass, previous_note_melody, previous_note_bass, proposed_note, proposed_note_bass]
             
             # assuming neither 
-            if (not isinstance(previous_note_bass, (note.Rest)) and \
-                not isinstance(next_note_bass, (note.Rest))) and \
+            if  not any([isinstance(n, note.Rest) for n in notes]) and \
                 ((self.is_parallel(first_bass, first_melody) == 1) or \
                 (self.is_parallel(second_bass, second_melody) == 1)):
                 return 1
@@ -588,7 +586,7 @@ class ContraryMotion(Constraint):
     """
     def not_satisfied(self, MCMC, chain, index_):
         
-        bass = list(MCMC.bassline.recurse(classFilter=('Note')))
+        bass = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
         
         proposed_note = chain[index_]
         
@@ -610,7 +608,6 @@ class ContraryMotion(Constraint):
             else:
                 return 0
             
-        # if at last note -> just interval before
         else:
             # get the notes needed
             previous_note_melody = chain[index_ - 1]
@@ -619,9 +616,11 @@ class ContraryMotion(Constraint):
             
             bass_ = [previous_note_bass, proposed_note_bass]
             melody_ = [previous_note_melody, proposed_note]
-                        
+
+            notes = [previous_note_melody, previous_note_bass, proposed_note_bass, proposed_note]
+            
             # if previous note is not a rest
-            if (not isinstance(previous_note_bass, (note.Rest))) and \
+            if not any([isinstance(n, note.Rest) for n in notes]) and \
                 (self.not_contrary(bass_, melody_) == 1):
                 return 1
             else:
