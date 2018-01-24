@@ -361,7 +361,7 @@ class GibbsBooleanSampler():
 				part_name = 'Alto'
 			
 			# if rest, rest is only choice
-			if self.chords[index_cnt] == -1:
+			if chords[index_cnt] == -1 or isinstance(soprano[index_cnt], note.Rest) or isinstance(bass[index_cnt], note.Rest):
 				p_is[j] = 1
 				continue
 			

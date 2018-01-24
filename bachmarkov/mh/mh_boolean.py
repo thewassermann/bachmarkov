@@ -59,7 +59,7 @@ class MCMCBooleanSampler():
 			before stopping
 	"""
 	
-	def __init__(self, bassline, vocal_range, chords, constraint_dict, fermata_layer, T, alpha, ps, weight_dict=None, thinning=1):
+	def __init__(self, bassline, vocal_range, chords, constraint_dict, fermata_layer, T, alpha, ps, weight_dict=None, thinning=1, progress_bar_off=True):
 		
 		self.bassline = extract_utils.to_crotchet_stream(bassline)
 		self.key = bassline.analyze('key')
@@ -74,6 +74,7 @@ class MCMCBooleanSampler():
 		self.fermata_layer = fermata_layer
 		self.weight_dict = self.set_weight_dict(weight_dict)
 		self.thinning = thinning
+		self.progress_bar_off = progress_bar_off
 
 
 	def set_weight_dict(self, weight_dict):
@@ -154,7 +155,7 @@ class MCMCBooleanSampler():
 			# profile_df.columns = list(self.constraint_dict.keys())
 			profile_array = np.empty((int(np.floor(n_iter/self.thinning)), ))
 		
-		for i in trange(n_iter, desc='Iteration', disable=True):
+		for i in trange(n_iter, desc='Iteration', disable=self.progress_bar_off):
 		# for i in np.arange(n_iter):
 			
 			# choose a random index
@@ -285,7 +286,7 @@ class MCMCBooleanSampler():
 		for j in np.arange(len(bass)):
 			
 			# if rest, rest is only choice
-			if self.chords[j] == -1:
+			if chords[j] == -1 or isinstance(soprano[j], note.Rest) or isinstance(bass[j], note.Rest):
 				p_is[j] = 1
 				continue
 			
