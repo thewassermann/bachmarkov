@@ -13,48 +13,50 @@ from utils import chord_utils, extract_utils, data_utils
 
 from mh import mh_boolean
 
+from collections import Counter
+
 class GibbsBooleanSampler():
 	"""
 	Simialr to the MCMC Boolean Sampler, designed to fill in the
 	Alto and Tenor lines of the chorale
 
-    Parameters
-    ----------
-    
-        bassline : stream.Part
-            True bassline of a Bach chorale
-    
-        vocal_range_dict : dictionary of tuple of pitch.Pitch
-            key: voice part string, value: vocal range arranged (low, high) for the part
-            
-        chords : list of strings
-            chords with ordered pitches (e.g. `0/4/7`)
+	Parameters
+	----------
+	
+		bassline : stream.Part
+			True bassline of a Bach chorale
+	
+		vocal_range_dict : dictionary of tuple of pitch.Pitch
+			key: voice part string, value: vocal range arranged (low, high) for the part
+			
+		chords : list of strings
+			chords with ordered pitches (e.g. `0/4/7`)
 
-        soprano : part.Part
-        	output of the MH Boolean sampler -- generated melody line
-    
-        constraint_dict : dictionary of `Constraints`
-            key : name of constraint, value : `Constraint` class
+		soprano : part.Part
+			output of the MH Boolean sampler -- generated melody line
+	
+		constraint_dict : dictionary of `Constraints`
+			key : name of constraint, value : `Constraint` class
 
-        fermata_layer : list of booleans
-            1 if there is a fermata on that beat index, 0 otherwise
-            
-        T : numeric (float/int)
-            Corresponding to `temperature`, rate at which proposals are accepted.
-            This is actually the inital value of T, which is altered via self.simulated_annealing()
+		fermata_layer : list of booleans
+			1 if there is a fermata on that beat index, 0 otherwise
+			
+		T : numeric (float/int)
+			Corresponding to `temperature`, rate at which proposals are accepted.
+			This is actually the inital value of T, which is altered via self.simulated_annealing()
 
-        alpha : float between 0 and 1
-            Parameter governing cooling schedule of T
-            Suggested to be between 0.85 and 0.96
-            
-        ps : float between 0 and 1
-            Probability of performing a `metropolis_move` or a `local_search`
+		alpha : float between 0 and 1
+			Parameter governing cooling schedule of T
+			Suggested to be between 0.85 and 0.96
+			
+		ps : float between 0 and 1
+			Probability of performing a `metropolis_move` or a `local_search`
 
-        weight_dict : dictionary of floats
-            key : name of constraint, value : float
+		weight_dict : dictionary of floats
+			key : name of constraint, value : float
 	"""
 
-	def __init__(self, bassline, vocal_range_dict, chords, soprano, constraint_dict, fermata_layer, T, alpha, ps, weight_dict=None):
+	def __init__(self, bassline, vocal_range_dict, chords, soprano, constraint_dict, fermata_layer, T, alpha, ps, weight_dict=None, thinning=1):
 
 		self.bassline = extract_utils.to_crotchet_stream(bassline)
 		self.key = bassline.analyze('key')
@@ -73,6 +75,7 @@ class GibbsBooleanSampler():
 
 		self.fermata_layer = fermata_layer
 		self.weight_dict = self.set_weight_dict(weight_dict)
+		self.thinning = thinning
 
 
 	def set_weight_dict(self, weight_dict):
@@ -99,32 +102,32 @@ class GibbsBooleanSampler():
 			clef_ = clef.Treble8vbClef()
 		else:
 			clef_ = clef.TrebleClef()
-            
+			
 		# get correct part name
 		if part_name == 'Tenor':
 			name_ = instrument.Tenor()
 		else:
 			name_ = instrument.Alto()
-		    
+			
 		# initialize index for chord list
 		chord_idx = 0
-        
+		
 		# need to get time signature, key signature etc, from bass part
 		for el in self.bassline.recurse(skipSelf=True):
-            
+			
 			# set clef
 			if el == clef.BassClef():
 				out_stream.insert(clef_)
 			# set part
 			elif isinstance(el, instrument.Instrument):
 				out_stream.insert(name_)
-                
+				
 			elif isinstance(el, (stream.Measure)):
 				# select a random index for a semitone and add to outstream
 				m = stream.Measure()
 				for measure_el in el:
 					if isinstance(measure_el, note.Note):
-                        
+						
 						# get random note in chord in range
 						out_note_choices =  chord_utils.random_note_in_chord_and_vocal_range(
 							extract_utils.extract_notes_from_chord(self.chords[chord_idx]),
@@ -187,13 +190,14 @@ class GibbsBooleanSampler():
 
 		# structure to store profiling data
 		if profiling:
-			profile_array = np.empty((n_iter, len(list(self.constraint_dict.keys()))))
-			profile_df = pd.DataFrame(profile_array)
-			profile_df.index = np.arange(n_iter)
-			profile_df.columns = list(self.constraint_dict.keys())
+			# profile_array = np.empty((n_iter, len(list(self.constraint_dict.keys()))))
+			# profile_df = pd.DataFrame(profile_array)
+			# profile_df.index = np.arange(n_iter)
+			# profile_df.columns = list(self.constraint_dict.keys())
+			profile_array = np.empty((int(np.floor(n_iter/self.thinning)), ))
 
-		#for i in trange(n_iter, desc='Iteration'):
-		for i in np.arange(n_iter):
+		for i in trange(n_iter, desc='Iteration', disable=True):
+		# for i in np.arange(n_iter):
 
 			# get length of the chorale
 			alto_flat = list(self.alto.recurse(classFilter=('Note', 'Rest')))
@@ -216,58 +220,64 @@ class GibbsBooleanSampler():
 				self.alto = self.local_search_gibbs(self.alto, 'Alto', idx)
 			else:
 				self.tenor = self.local_search_gibbs(self.tenor, 'Tenor', idx)
-                
+				
 			# run the profiler
-			if profiling:
-				for k in list(self.constraint_dict.keys()):
-					if target_part_name == 'Alto':
-						profile_df.loc[i, k] = self.constraint_dict[k].profiling(self)
-					else:
-						profile_df.loc[i, k] = self.constraint_dict[k].profiling(self)
+			# if profiling:
+			# 	for k in list(self.constraint_dict.keys()):
+			# 		if target_part_name == 'Alto':
+			# 			profile_df.loc[i, k] = self.constraint_dict[k].profiling(self)
+			# 		else:
+			# 			profile_df.loc[i, k] = self.constraint_dict[k].profiling(self)
+			if profiling and (i % self.thinning == 0):
+				profile_array[int(i / self.thinning)] = self.log_likelihood()
 
 			# simulated annealing step
 			self.simulated_annealing(i, self.T_0)
-        
+		
 		if profiling and plotting:
 
-			# print out marginal chain progression
-			if len(profile_df.columns) == 1:
-				profile_df.plot()
-			else:
-				# plot the results
-				row_num = int(np.ceil((len(profile_df.columns)) / 2))
+			# # print out marginal chain progression
+			# if len(profile_df.columns) == 1:
+			# 	profile_df.plot()
+			# else:
+			# 	# plot the results
+			# 	row_num = int(np.ceil((len(profile_df.columns)) / 2))
 
-				# initialize row and column iterators
-				row = 0
-				col = 0
-				fig, axs = plt.subplots(row_num, 2, figsize=(12*row_num, 8))
+			# 	# initialize row and column iterators
+			# 	row = 0
+			# 	col = 0
+			# 	fig, axs = plt.subplots(row_num, 2, figsize=(12*row_num, 8))
 
-				for i in np.arange(len(profile_df.columns)):
+			# 	for i in np.arange(len(profile_df.columns)):
 
-					ax = np.array(axs).reshape(-1)[i]
-					ax.plot(profile_df.index, profile_df.iloc[:,i])
-					ax.set_xlabel('N iterations')
-					ax.set_ylabel(profile_df.columns[i])
-					ax.set_title(profile_df.columns[i])
+			# 		ax = np.array(axs).reshape(-1)[i]
+			# 		ax.plot(profile_df.index, profile_df.iloc[:,i])
+			# 		ax.set_xlabel('N iterations')
+			# 		ax.set_ylabel(profile_df.columns[i])
+			# 		ax.set_title(profile_df.columns[i])
 
-					# get to next axis
-					if i % 2 == 1:
-						col += 1
-					else:
-						col = 0
-						row += 1
+			# 		# get to next axis
+			# 		if i % 2 == 1:
+			# 			col += 1
+			# 		else:
+			# 			col = 0
+			# 			row += 1
 
-				# turn axis off if empty
-				if col == 0:
-					np.array(axs).reshape(-1)[i+1].axis('off')
+			# 	# turn axis off if empty
+			# 	if col == 0:
+			# 		np.array(axs).reshape(-1)[i+1].axis('off')
 
-				fig.tight_layout()
-				plt.show()
+			# 	fig.tight_layout()
+			# 	plt.show()
+			ess = self.effective_sample_size(profile_array)
+			print('{} Iterations : Effective Sample Size {}'.format(n_iter, ess))
+
+			plt.plot(np.arange(int(np.floor(n_iter/self.thinning))) * self.thinning, profile_array)
 
 		if profiling:
 			# return profile_df.mean(axis=1)
 			# return the whole df
-			return profile_df
+			return profile_array # profile_df
 
 
 	def local_search_gibbs(self, part_, part_name, index_):
@@ -277,13 +287,13 @@ class GibbsBooleanSampler():
 		Search through the possible notes and select the note that does not satisfy
 		the least number of constraints (a.k.a satisfies the most)
 		"""
-        
+		
 		possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
 			extract_utils.extract_notes_from_chord(self.chords[index_]),
 			self.key,
 			self.vocal_range_dict[part_name]
 		)
-        
+		
 		# has possible notes in dict as note.Note is an unhashable type
 		possible_dict = {n.nameWithOctave : n for n in possible_notes}
 
@@ -291,7 +301,7 @@ class GibbsBooleanSampler():
 		# see which one satisfies the most constraints
 		note_constraints_dict = {}
 		for note_ in possible_notes:
-            
+			
 			# create chain including possible note
 			possible_chain = list(part_.recurse(classFilter=('Note', 'Rest')))
 			possible_chain[index_] = note_
@@ -305,7 +315,7 @@ class GibbsBooleanSampler():
 						self.weight_dict[k] for k in list(self.constraint_dict.keys())]
 
 			note_constraints_dict[note_.nameWithOctave] = np.nansum(constraints_not_met)
-            
+			
 		# get the conditional distribution of each possible note
 		# transform prob into exp(- constraints_not_met) and normalize
 		note_probs = {}
@@ -329,6 +339,78 @@ class GibbsBooleanSampler():
 		)
 
 
+	def log_likelihood(self):
+		"""
+		Compute loglikelihood of inner parts
+		"""
+
+		flat_alto = list(self.alto.recurse(classFilter=('Note', 'Rest')))
+		flat_tenor = list(self.tenor.recurse(classFilter=('Note', 'Rest')))
+
+		p_is = np.empty((len(flat_tenor * 2),))
+		
+		index_cnt = 0
+		part_name = 'Tenor'
+		
+		for j in np.arange(len(flat_tenor * 2)):
+			
+			# index flag and previous part determine which part to operate on next
+			if part_name == 'Alto':
+				part_name = 'Tenor'
+			else:
+				part_name = 'Alto'
+			
+			# if rest, rest is only choice
+			if self.chords[index_cnt] == -1:
+				p_is[j] = 1
+				continue
+			
+			# possible notes
+			possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+				extract_utils.extract_notes_from_chord(self.chords[index_cnt]),
+				self.key,
+				self.vocal_range_dict[part_name]
+			)
+			
+			# loop through notes in chorale
+			note_probabilities_dict = {}
+			
+			# loop through possible notes alto then tenor 
+			for k in np.arange(len(possible_notes)):
+				
+				if part_name == 'Alto':
+					possible_chain = flat_alto[:]
+					possible_chain[index_cnt] = possible_notes[k]
+				if part_name == 'Tenor':
+					possible_chain = flat_tenor[:]
+					possible_chain[index_cnt] = possible_notes[k]
+	
+				# for each note in chorale calculate p_i
+				constraints_not_met = \
+					[self.constraint_dict[constraint].not_satisfied(self, possible_chain, index_cnt, part_name) * \
+					self.weight_dict[constraint] for constraint in list(self.constraint_dict.keys())]
+				
+				note_probabilities_dict[possible_notes[k].nameWithOctave] = np.exp(-np.nansum(constraints_not_met)/self.T)
+				total_sum = np.nansum(list(note_probabilities_dict.values()))
+				note_probabilities_dict = {key : note_probabilities_dict[key] / total_sum for key in list(note_probabilities_dict.keys())}
+			
+				
+			if part_name == 'Alto':
+				p_is[j] = note_probabilities_dict.get(flat_alto[index_cnt].nameWithOctave, 0.01)
+			else:
+				p_is[j] = note_probabilities_dict.get(flat_tenor[index_cnt].nameWithOctave, 0.01)
+			
+			if j % 2 == 1:
+				index_cnt += 1 
+	
+		# return scores
+		return -np.nansum(np.log(p_is))
+
+	def effective_sample_size(self, profile_array):
+		rhos = profile_array[1:]
+		return self.thinning * (len(profile_array) / (1 + (2 * np.nansum(rhos))))
+
+
 	def simulated_annealing(self, iter_, T_0):
 		"""
 		Function to cool T up to a certain level
@@ -336,13 +418,13 @@ class GibbsBooleanSampler():
 		if self.T > .1:
 			self.T = self.alpha * self.T
 
-        # lower bound to confirm convergence
-        # if self.T > .01:
-        #     self.T = T_0 / np.log(2 + iter_)
+		# lower bound to confirm convergence
+		# if self.T > .01:
+		#     self.T = T_0 / np.log(2 + iter_)
 
-        # cauchy 
-        # if self.T >.1:
-        #     self.T = T_0 / iter_
+		# cauchy 
+		# if self.T >.1:
+		#     self.T = T_0 / iter_
 
 
 
@@ -350,8 +432,8 @@ class GibbsConstraint():
 	"""
 	Superclass for constraints. `Constraint`s
 	return a boolean value:
-	    - 1 if the `Constraint` is unsatisfied
-	    - 0 if the `Constraint` is satisfied
+		- 1 if the `Constraint` is unsatisfied
+		- 0 if the `Constraint` is satisfied
 	"""
 
 	def __init__(self, name):
@@ -396,10 +478,10 @@ class NoCrossing(GibbsConstraint):
 
 	def profiling(self, MCMC):
 
-		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note', 'Rest')))
-		alto_ = list(MCMC.alto.recurse(classFilter=('Note', 'Rest')))
-		tenor_ = list(MCMC.tenor.recurse(classFilter=('Note', 'Rest')))
-		bass_ = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
+		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note')))
+		alto_ = list(MCMC.alto.recurse(classFilter=('Note')))
+		tenor_ = list(MCMC.tenor.recurse(classFilter=('Note')))
+		bass_ = list(MCMC.bassline.recurse(classFilter=('Note')))
 
 		crossing_count = 0
 		for i in np.arange(len(soprano_)):
@@ -479,8 +561,8 @@ class StepwiseMotion(GibbsConstraint):
 		Parameters
 		----------
 
-		    note_1 : note.Note
-		    note_2 : note.Note
+			note_1 : note.Note
+			note_2 : note.Note
 		"""
 		if abs(interval.notesToChromatic(note_1, note_2).semitones) >= 2:
 			return 1
@@ -568,6 +650,131 @@ class NoParallelIntervals(GibbsConstraint):
 		else:
 			return 0
 
+
+class FillInChord(GibbsConstraint):
+	pass
+
+
+class OctaveMax(GibbsConstraint):
+	"""
+	Returns 1 if soprano/alto/tenor parts more than an octave apart
+	"""
+
+	def not_satisfied(self, MCMC, chain, index_, part_name):
+
+		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note', 'Rest')))
+
+		if isinstance(soprano_[index_], note.Rest):
+			return 0
+
+
+		if part_name == 'Alto':
+			alto_ = chain
+			tenor_ = list(MCMC.tenor.recurse(classFilter=('Note', 'Rest')))
+
+			if (self.octave_plus(alto_[index_], soprano_[index_]) == 1) or \
+				(self.octave_plus(tenor_[index_], alto_[index_]) == 1):
+				return 1
+			else:
+				return 0
+		else:
+			alto_ = list(MCMC.alto.recurse(classFilter=('Note', 'Rest')))
+			tenor_ = chain
+
+			if self.octave_plus(tenor_[index_], alto_[index_]) == 1:
+				return 1
+			else:
+				return 0
+
+
+	def profiling(self, MCMC):
+
+		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note')))
+		alto_ = list(MCMC.alto.recurse(classFilter=('Note')))
+		tenor_ = list(MCMC.tenor.recurse(classFilter=('Note')))
+
+		more_than_octave = 0
+		for i in np.arange(len(soprano_)):
+
+			if (self.octave_plus(alto_[i], soprano_[i]) == 1) or \
+				(self.octave_plus(tenor_[i], alto_[i]) == 1):
+				more_than_octave += 1
+
+		return 1 - (more_than_octave / len(soprano_))
+
+
+	def octave_plus(self, note_1, note_2):
+
+		if abs(interval.notesToChromatic(note_1, note_2).semitones) > 12:
+			return 1
+		else:
+			return 0
+
+
+class NewNotes(GibbsConstraint):
+	"""
+	Constraint to return 1 if the proposed note is already present in the
+	music
+	"""
+
+	def not_satisfied(self, MCMC, chain, index_, part_name):
+		
+		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note', 'Rest')))
+		bass_ = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
+
+		if part_name == 'Alto':
+			tenor_ = list(MCMC.tenor.recurse(classFilter=('Note', 'Rest')))
+			other_notes = [soprano_[index_], tenor_[index_], bass_[index_]]
+		else:
+			alto_ = list(MCMC.alto.recurse(classFilter=('Note', 'Rest')))
+			other_notes = [soprano_[index_], alto_[index_], bass_[index_]]
+
+		if self.not_new_note(chain[index_], other_notes) == 1:
+			return 1
+		else:
+			return 0
+
+
+	def profiling(self, MCMC):
+		"""
+		One note will have to be doubled so make sure any single note does not have more
+		than 2 and that only 1 note has two
+		"""
+
+		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note')))
+		alto_ = list(MCMC.alto.recurse(classFilter=('Note')))
+		tenor_ = list(MCMC.tenor.recurse(classFilter=('Note')))
+		bass_ = list(MCMC.bassline.recurse(classFilter=('Note')))
+
+		double_count = 0
+
+		for i in np.arange(len(soprano_)):
+			notes_in_chord = [soprano_[i].pitch.name, alto_[i].pitch.name, tenor_[i].pitch.name, bass_[i].pitch.name]
+			notes_counter = Counter(notes_in_chord)
+			if any([True if nc > 2 else False for nc in list(notes_counter.values())]) or (list(notes_counter.values()).count(2) > 1):
+				double_count += 1
+
+		return 1 - (double_count/len(soprano_))
+
+
+	def not_new_note(self, prop_note, other_notes):
+		if prop_note.pitch.name in set([on.name for on in other_notes]):
+			return 1
+		else:
+			return 0
+
+
+class CrossConstraint(GibbsConstraint):
+
+	def __init__(self, name, constraint_list):
+		self.name = name
+		self.cl = constraint_list
+
+	def not_satisfied(self, MCMC, chain, index_, part_name):
+		return np.nanprod([c.not_satisfied(MCMC, chain, index_, part_name) for c in self.cl])
+
+	def profiling(self, MCMC):
+		return np.nanprod([c.profiling(MCMC) for c in self.cl])
 
 
 
