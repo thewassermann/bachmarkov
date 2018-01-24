@@ -6,6 +6,7 @@ from music21 import *
 
 import numpy as np
 from utils import extract_utils
+import copy
 
 
 def relOrderedPitchClassesString(orderedPitches, key):
@@ -113,21 +114,19 @@ def random_note_in_chord_and_vocal_range(relPitchList, key, vocal_range):
 	for n in notes:
 
 		# possible octaves
-		low_octave = n.pitch.transposeAboveTarget(lowest_note).octave - 1
-		high_octave = n.pitch.transposeBelowTarget(highest_note).octave + 1
+		low_octave = lowest_note.octave
+		high_octave = highest_note.octave
         
 		# select random octave
 		# if only one choice available
-		if low_octave >= high_octave:
-			n.octave = low_octave
-		else:
-			octave_choice = np.arange(low_octave, high_octave)
-			selected_octave = np.random.choice(octave_choice)
+		octave_choice = np.arange(low_octave, high_octave + 1)
 
-			# set octave
-			n.octave = selected_octave
-        
-		octave_corrected_notes.append(n)
-        
+		# loop throughpossible octaves
+		for o in octave_choice:
+			note_ = copy.deepcopy(n)
+			note_.octave = o
+			if (note_.pitch >= lowest_note) and (note_.pitch <= highest_note):
+				octave_corrected_notes.append(note_)
+
 	return octave_corrected_notes
 
