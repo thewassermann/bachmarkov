@@ -286,7 +286,7 @@ class MCMCBooleanSampler():
 		for j in np.arange(len(bass)):
 			
 			# if rest, rest is only choice
-			if chords[j] == -1 or isinstance(soprano[j], note.Rest) or isinstance(bass[j], note.Rest):
+			if self.chords[j] == -1 or isinstance(soprano[j], note.Rest) or isinstance(bass[j], note.Rest):
 				p_is[j] = 1
 				continue
 			

@@ -344,8 +344,10 @@ class GibbsBooleanSampler():
 		Compute loglikelihood of inner parts
 		"""
 
+		soprano = list(self.soprano.recurse(classFilter=('Note', 'Rest')))
 		flat_alto = list(self.alto.recurse(classFilter=('Note', 'Rest')))
 		flat_tenor = list(self.tenor.recurse(classFilter=('Note', 'Rest')))
+		bass = list(self.bass.recurse(classFilter=('Note', 'Rest')))
 
 		p_is = np.empty((len(flat_tenor * 2),))
 		
@@ -361,7 +363,7 @@ class GibbsBooleanSampler():
 				part_name = 'Alto'
 			
 			# if rest, rest is only choice
-			if chords[index_cnt] == -1 or isinstance(soprano[index_cnt], note.Rest) or isinstance(bass[index_cnt], note.Rest):
+			if self.chords[index_cnt] == -1 or isinstance(soprano[index_cnt], note.Rest) or isinstance(bass[index_cnt], note.Rest):
 				p_is[j] = 1
 				continue
 			
