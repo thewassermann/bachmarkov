@@ -2,6 +2,9 @@ from  music21 import *
 import numpy as np
 import pandas as pd
 
+import matplotlib 
+matplotlib.use('Agg')
+
 from mh import mh, mh_boolean
 from gibbs import gibbs, gibbs_boolean
 from tuning import convergence_diagnostics
@@ -15,9 +18,6 @@ import seaborn as sns
 import pickle
 
 import sys
-
-import matplotlib 
-matplotlib.use('Agg')
 
 def main():
 	"""
