@@ -2,10 +2,11 @@ from  music21 import *
 import numpy as np
 import pandas as pd
 
-from mh import mh
-from gibbs import gibbs
+from mh import mh, mh_boolean
+from gibbs import gibbs, gibbs_boolean
 from tuning import convergence_diagnostics
 from tuning import random_search
+from tuning import ll_method
 
 from utils import chord_utils, extract_utils, data_utils
 
@@ -22,59 +23,79 @@ def main():
 	Parameters
 	----------
 
-		n_iter : int
-		run_length : int
-		walkers : int
-		out_filename :str
+		num : which function to run:
 	"""
 
-	if len(sys.argv) != 5:
+	if len(sys.argv) != 2:
 		print('Input correct number of Parameters please')
 		return -1
 
-	n_iter = int(sys.argv[1])
-	run_length = int(sys.argv[2])
-	walkers = int(sys.argv[3])
-	out_filename = sys.argv[4] + ".p"
+	num = int(sys.argv[1])
 
-	chorales = data_utils.load_clean_chorales(n_upload=20)
+	chorales = data_utils.load_clean_chorales(n_upload=30)
 
-	test_mh = mh.PachetRoySopranoAlgo(
-		chorales['Major'][1],
-	)
-	test_mh.run(100, True, plotting=False)
-
-	test_gibbs = gibbs.GibbsSampler(
-		test_mh.chorale,
-		test_mh.melody,
-		test_mh.bassline,
-		test_mh.chords,
-		vocal_range_dict={
-			'Alto' : (pitch.Pitch('g3'), pitch.Pitch('c5')),
-			'Tenor' : (pitch.Pitch('c3'), pitch.Pitch('e4')), 
+	# mh run
+	if num == 1:
+		cd_mh = mh_boolean.create_cross_constraint_dict(
+		{
+			'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
+			'NPI' : mh_boolean.NoParallelIntervals('NPI'),
+			'CM' : mh_boolean.ContraryMotion('CM'),
+			'NTT' : mh_boolean.NoteToTonic('NTT'),
+			'LTS' : mh_boolean.LeapThenStep('LTS'),
+			'RR' : mh_boolean.ReduceRepeated('RR'),
+			'MWT' : mh_boolean.MovementWithinThird('MWT'),
 		},
-		conditional_dict={
-			'NC' : gibbs.NoCrossing('NC'),
-			'SWM' : gibbs.StepWiseMotion('SWM'),
-			'NPM' : gibbs.NoParallelMotion('NPM'),
-			'OM' : gibbs.OctaveMax('OM')
-		}
+		'MH'
 	)
 
-	RS = random_search.RandomSearch(
-		np.random.choice(chorales['Major'], size=3),
-		test_gibbs,
-		'Gibbs'
+	test_ = ll_method.WeightTrainingMHCV(
+		chorales['Major'],
+		(pitch.Pitch('c4'), pitch.Pitch('g5')),
+		5, # k folds
+		100, # number of weights to choose
+		cd_mh,
+		1000, # T
+		0.001, # lambda 
+		1500, # chain run iter
 	)
 
-	RS_output = RS.run(
-		n_iter=n_iter,
-		run_length=run_length,
-		walkers=walkers
-	)
+	output_mh = test_.run()
 
-	pickle.dump(RS_output, open(out_filename, "wb" ))
+	pickle.dump(output_mh, open( "output_mh_20180124.p", "wb" ) )
 
+
+	# gibbs run
+	if num == 2:
+		cd_gibbs = mh_boolean.create_cross_constraint_dict(
+			{
+				'NC' : gibbs_boolean.NoCrossing('NC'),
+				'SWM' : gibbs_boolean.StepwiseMotion('SWM'),
+				'NPI' : gibbs_boolean.NoParallelIntervals('NPI'),
+				'OM' : gibbs_boolean.OctaveMax('OM'),
+				'NN' : gibbs_boolean.NewNotes('NN'), 
+			},
+			'Gibbs'
+		)
+
+		test_gibbs = ll_method.WeightTrainingGibbsCV(
+			chorales['Major'],
+			{
+				'Alto' : (pitch.Pitch('g3'), pitch.Pitch('c5')),
+				'Tenor' : (pitch.Pitch('c3'), pitch.Pitch('e4'))
+			 
+			},
+			5, # k folds
+			100, # number of weights to choose
+			cd_gibbs,
+			1000, # T
+			0.001, # lambda 
+			1250, # chain run iter
+		)
+
+		output_gibbs = test_gibbs.run()
+
+		pickle.dump(output_gibbs, open("output_gibbs_20180124.p", "wb" ) )
 
 if __name__ == '__main__':
    main()
