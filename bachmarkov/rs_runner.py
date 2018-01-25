@@ -47,22 +47,23 @@ def main():
 			'MWT' : mh_boolean.MovementWithinThird('MWT'),
 		},
 		'MH'
-	)
+		)
 
-	test_ = ll_method.WeightTrainingMHCV(
-		chorales['Major'],
-		(pitch.Pitch('c4'), pitch.Pitch('g5')),
-		5, # k folds
-		100, # number of weights to choose
-		cd_mh,
-		1000, # T
-		0.001, # lambda 
-		1500, # chain run iter
-	)
+		test_ = ll_method.WeightTrainingMHCV(
+			chorales['Major'],
+			(pitch.Pitch('c4'), pitch.Pitch('g5')),
+			5, # k folds
+			100, # number of weights to choose
+			cd_mh,
+			1000, # T
+			0.001, # lambda 
+			1500, # chain run iter
+		)
 
-	output_mh = test_.run()
+		output_mh = test_.run()
+		print('MH Run!!!')
 
-	pickle.dump(output_mh, open( "output_mh_20180124.p", "wb" ) )
+		pickle.dump(output_mh, open( "output_mh_20180124.p", "wb" ) )
 
 
 	# gibbs run
@@ -94,6 +95,7 @@ def main():
 		)
 
 		output_gibbs = test_gibbs.run()
+		print('Gibbs Run!!!')
 
 		pickle.dump(output_gibbs, open("output_gibbs_20180124.p", "wb" ) )
 
