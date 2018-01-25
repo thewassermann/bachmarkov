@@ -16,6 +16,9 @@ import pickle
 
 import sys
 
+import matplotlib 
+matplotlib.use('Agg')
+
 def main():
 	"""
 	Command line interface for  random search:
