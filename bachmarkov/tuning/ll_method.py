@@ -46,7 +46,7 @@ class WeightTrainer():
 		for i in trange(n_iter, desc=' Number of Weightings tried', disable=True):
 		
 			# generate random weight metric
-			random_ws = np.random.exponential(100, size=len(list(self.constraint_dict.keys())))
+			random_ws = np.random.exponential(10, size=len(list(self.constraint_dict.keys())))
 			weight_dict = {k: random_ws[iter_] for iter_, k in enumerate(list(self.constraint_dict.keys()))}
 			scores_df.iloc[i, :-1] = np.array(list(weight_dict.values()))
 			
@@ -88,7 +88,7 @@ class WeightTrainer():
 				p_is[j] = note_probabilities_dict.get(self.soprano[j].nameWithOctave, 0.001)
 		
 			# return scores
-			scores_df.loc[i, 'Log-Lik'] = -np.log((np.nanprod(p_is))) + (self.lambda_ * np.nansum(random_ws**2))
+			scores_df.loc[i, 'Log-Lik'] = -np.nansum(np.log(p_is))
 		
 		return scores_df
 		
@@ -128,7 +128,7 @@ class WeightTrainerInner():
 		for i in trange(n_iter, desc=' Number of Weightings tried', disable=True):
 			
 			# generate random weight metric
-			random_ws = np.random.exponential(100, size=len(list(self.constraint_dict.keys())))
+			random_ws = np.random.exponential(10, size=len(list(self.constraint_dict.keys())))
 			weight_dict = {k: random_ws[iter_] for iter_, k in enumerate(list(self.constraint_dict.keys()))}
 			scores_df.iloc[i, :-1] = np.array(list(weight_dict.values()))
 			

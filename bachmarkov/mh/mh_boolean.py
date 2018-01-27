@@ -241,6 +241,7 @@ class MCMCBooleanSampler():
 			# return profile_df.mean(axis=1)
 			# return the whole df
 			return profile_array # profile_df
+
 		
 	def show_melody_bass(self, show_command=None):
 		"""
@@ -317,7 +318,7 @@ class MCMCBooleanSampler():
 			
 			p_is[j] = note_probabilities_dict.get(soprano[j].nameWithOctave, 0.001)
 
-		return -np.log(np.nanprod(p_is))
+		return -np.nansum(np.log(p_is))
 		
 
 	def metropolis_move(self, part_, proposed_note, index_):
@@ -433,12 +434,12 @@ class MCMCBooleanSampler():
 		"""
 		Function to cool T up to a certain level
 		"""
-		if self.T > .1:
-			self.T = self.alpha * self.T
+		# if self.T > .1:
+		# 	self.T = self.alpha * self.T
 
 		# lower bound to confirm convergence
-		# if self.T > .01:
-		#     self.T = T_0 / np.log(2 + iter_)
+		if self.T > 1:
+			self.T = T_0 / np.log(2 + iter_)
 
 		# cauchy 
 		# if self.T >.1:

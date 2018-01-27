@@ -130,3 +130,9 @@ def random_note_in_chord_and_vocal_range(relPitchList, key, vocal_range):
 
 	return octave_corrected_notes
 
+
+# def recursed_to_accidentals():
+# 	"""
+# 	takes a recursed part and returns better accidental choices
+# 	"""
+
