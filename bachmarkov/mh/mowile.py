@@ -211,7 +211,7 @@ def MOWILECV(chorales, kfolds, budget, n_restarts, beta, alpha, weight_upper_bou
                 training_[j].parts['Bass'],
                 (pitch.Pitch('c4'), pitch.Pitch('g5')),
                 chord_utils.degrees_on_beats(training_[j]),
-                cd_mh,
+                cd,
                 extract_utils.extract_fermata_layer(
                     extract_utils.to_crotchet_stream(training_[j].parts['Soprano'])
                 ),
@@ -234,7 +234,7 @@ def MOWILECV(chorales, kfolds, budget, n_restarts, beta, alpha, weight_upper_bou
                 testing_[k].parts['Bass'],
                 (pitch.Pitch('c4'), pitch.Pitch('g5')),
                 chord_utils.degrees_on_beats(testing_[k]),
-                cd_mh,
+                cd,
                 extract_utils.extract_fermata_layer(
                     extract_utils.to_crotchet_stream(testing_[k].parts['Soprano'])
                 ),

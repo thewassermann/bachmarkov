@@ -44,7 +44,7 @@ def main():
 	    'MH'
 	)
 
-	test_outcv = MOWILECV(
+	test_outcv = mowile.MOWILECV(
     	chorales['Major'],
     	10,
     	200,
