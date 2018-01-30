@@ -434,12 +434,12 @@ class MCMCBooleanSampler():
 		"""
 		Function to cool T up to a certain level
 		"""
-		# if self.T > .1:
-		# 	self.T = self.alpha * self.T
+		if self.T > .1:
+			self.T = self.alpha * self.T
 
 		# lower bound to confirm convergence
-		if self.T > 1:
-			self.T = T_0 / np.log(2 + iter_)
+		# if self.T > 1:
+		# 	self.T = T_0 / np.log(2 + iter_)
 
 		# cauchy 
 		# if self.T >.1:
@@ -1045,6 +1045,36 @@ def create_cross_constraint_dict(constraint_dict, model):
 			
 	return cd_out  
 
+# trained weights
+# NIJ          6.720067
+# NIJ/NPI      6.602889
+# NIJ/CM       7.351684
+# NIJ/NTT      6.749566
+# NIJ/LTS      6.011395
+# NIJ/RR       7.656894
+# NIJ/MWT      6.948376
+# NPI          6.044982
+# NPI/CM       6.367033
+# NPI/NTT      7.165307
+# NPI/LTS      6.124189
+# NPI/RR       6.930095
+# NPI/MWT      5.977234
+# CM           3.956699
+# CM/NTT       7.115753
+# CM/LTS       5.530217
+# CM/RR        7.030064
+# CM/MWT       6.264896
+# NTT          6.689717
+# NTT/LTS      6.716246
+# NTT/RR       6.208140
+# NTT/MWT      6.814695
+# LTS          3.973700
+# LTS/RR       7.024067
+# LTS/MWT      3.802352
+# RR           5.215452
+# RR/MWT       5.803847
+# MWT          3.683069
+# MSE        948.166726
 
 
 		

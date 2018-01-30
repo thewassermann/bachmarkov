@@ -6,6 +6,8 @@ from music21 import *
 import numpy as np
 import copy
 
+from utils import chord_utils, extract_utils, data_utils
+
 
 # def flattened_to_stream(flat, bassline, out_stream, part_, fermata_layer=None):
 # 	"""
@@ -134,12 +136,12 @@ def get_intervals(part_list, start_ix=None, end_ix=None):
 
 		part_list : list of music21.note.Note and music21.note.Rest
 	"""
-    
+	
 	no_rests = [x for x in part_list if not x.isRest]
 	out_stream = np.empty((len(no_rests),))
 	for i, el in enumerate(no_rests):
-        
-        # first entry has no interval
+		
+		# first entry has no interval
 		if i == 0:
 			out_stream[i] = 0
 		else:
@@ -166,13 +168,13 @@ def to_crotchet_stream(part, chord_flag=False):
 	Parameters
 	----------
 
-	    part : music21.stream.Part
-	    
+		part : music21.stream.Part
+		
 	Returns
 
-	    music21.stream.Part exactly the same
-	    as the parameter `part` but with only
-	    notes on beats
+		music21.stream.Part exactly the same
+		as the parameter `part` but with only
+		notes on beats
 	"""
 
 	# structure for outputting data
@@ -181,8 +183,8 @@ def to_crotchet_stream(part, chord_flag=False):
 	# recurse through all data in given part
 	# and return only notes with whole quarter beats
 	for item in part.recurse(skipSelf=True):
-            
-            # get measure offset
+			
+			# get measure offset
 			if isinstance(item, (stream.Measure)):
 				measure_offset = item.offset
 				m = stream.Measure()
@@ -190,7 +192,7 @@ def to_crotchet_stream(part, chord_flag=False):
 				for measure_item in item:
 
 					if not chord_flag:
-                    
+					
 						if isinstance(measure_item, (chord.Chord, note.Note, note.Rest)):
 							# check offset and beat number
 							offset = measure_item.offset
@@ -206,8 +208,8 @@ def to_crotchet_stream(part, chord_flag=False):
 									in_note = note.Note(measure_item.pitch,quarterLength=1)
 									in_note.expressions = measure_item.expressions
 									m.insert(offset, in_note)
-	                            
-	                        # on beat note, more than one beat
+								
+							# on beat note, more than one beat
 							elif offset.is_integer() and dur > 1.:
 								for cnt in np.arange(np.ceil(dur)):
 									if isinstance(measure_item, (note.Rest)):
@@ -218,9 +220,9 @@ def to_crotchet_stream(part, chord_flag=False):
 										in_note = note.Note(measure_item.pitch, quarterLength=1)
 										in_note.expressions = measure_item.expressions
 										m.insert(offset + cnt, in_note)
-	                                
-	                        # on non-beat note, not covering beat -> skip
-	                        # on non-beat note, covering beat
+									
+							# on non-beat note, not covering beat -> skip
+							# on non-beat note, covering beat
 							elif dur >= 1.:
 								for cnt in np.arange(np.ceil(dur)):
 									if isinstance(measure_item, (note.Rest)):
@@ -249,8 +251,8 @@ def to_crotchet_stream(part, chord_flag=False):
 									in_chord = chord.Chord(measure_item.pitches, quarterLength=1)
 									in_chord.expressions = measure_item.expressions
 									m.insert(offset, in_chord)
-	                            
-	                        # on beat note, more than one beat
+								
+							# on beat note, more than one beat
 							elif offset.is_integer() and dur > 1.:
 								for cnt in np.arange(np.ceil(dur)):
 									if isinstance(measure_item, (note.Rest)):
@@ -261,9 +263,9 @@ def to_crotchet_stream(part, chord_flag=False):
 										in_chord = chord.Chord(measure_item.pitches, quarterLength=1)
 										in_chord.expressions = measure_item.expressions
 										m.insert(offset + cnt, in_chord)
-	                                
-	                        # on non-beat note, not covering beat -> skip
-	                        # on non-beat note, covering beat
+									
+							# on non-beat note, not covering beat -> skip
+							# on non-beat note, covering beat
 							elif dur >= 1.:
 								for cnt in np.arange(np.ceil(dur)):
 									if isinstance(measure_item, (note.Rest)):
@@ -274,16 +276,16 @@ def to_crotchet_stream(part, chord_flag=False):
 										in_chord = chord.Chord(measure_item.pitches, quarterLength=1)
 										in_chord.expressions = measure_item.expressions
 										m.insert(np.ceil(offset) + cnt, in_chord)
-                                
+								
 				# add measure to score
 				out_stream.insert(measure_offset, m)
-            
-            # notes and rests dealt with in measure code
+			
+			# notes and rests dealt with in measure code
 			elif isinstance(item, (chord.Chord, note.Note, note.Rest)):
 				continue
 			else:
 				out_stream.insert(item.offset, item)
-                    
+					
 	return out_stream
 
 def extract_bassline(chorale):
@@ -301,10 +303,10 @@ def extract_bassline(chorale):
 		degree_outstream : list of integers
 			Bassline on beats as degrees of a scale
 	"""
-    # function to extract the bass line on beats from chorale and put into relative ordered pitch notation
-    
+	# function to extract the bass line on beats from chorale and put into relative ordered pitch notation
+	
 	outstream = to_crotchet_stream(chorale.parts['Bass'])
-                       
+					   
 	# turn output stream into degrees of the scale
 	degree_outstream = []
 
@@ -318,7 +320,7 @@ def extract_bassline(chorale):
 		else:
 			degree = (bass.pitch.pitchClass - pc) % 12
 			degree_outstream.append(degree)
-    
+	
 	return degree_outstream
 
 
@@ -345,7 +347,7 @@ def extract_notes_from_chord(chord_str):
 	Parameters
 	----------
 
-	    chord_str : string or int (-1 for rests)
+		chord_str : string or int (-1 for rests)
 	"""
 
 	# if rest
@@ -353,4 +355,102 @@ def extract_notes_from_chord(chord_str):
 		return -1
 	else:
 		return [int(x) for x in chord_str.split('/')]
-    
+
+
+def rel_pitch_melody_to_line(melody, bass):
+	
+	vocal_range = (pitch.Pitch('c4'), pitch.Pitch('g5'))
+	
+	out_flat = []
+	
+	# loop through melody to produce output stream
+	for i in np.arange(len(melody)):
+		
+		# if a rest
+		if isinstance(melody[i], note.Rest):
+			out_flat.append(note.Note, quarterLength=1)
+			continue
+		
+		# if first note choose random octave within range for note
+		if i == 0:
+			possible_starting_notes = chord_utils.random_note_in_chord_and_vocal_range(
+				[float(melody[i])],
+				bass.analyze('key'),
+				vocal_range,
+			)
+			out_flat.append(np.random.choice(possible_starting_notes))
+		else:
+			possible_next_notes = chord_utils.random_note_in_chord_and_vocal_range(
+				[float(melody[i])],
+				bass.analyze('key'),
+				vocal_range,
+			)
+			
+			# if two otpions, choose the one closer to the middle of the vocal range
+			if len(possible_next_notes) > 1:
+				
+				dist_ = [abs(interval.notesToChromatic(pnn, out_flat[i-1]).semitones) for pnn in possible_next_notes]
+				out_flat.append(possible_next_notes[np.argmin(dist_)])
+			else:
+				out_flat.append(possible_next_notes[0])
+			
+	return out_flat
+
+
+def line_to_relative_pitches(line, key):
+	"""
+	Convert a music21.part into a list of notes expressed as
+	relative pitches
+	"""
+	
+	line = extract_utils.to_crotchet_stream(line)
+	
+	line = list(line.recurse(classFilter=('Note', 'Rest')))
+	
+	outline = []
+	
+	# get tonic key as a `pitchClass`
+	tonic = key.getTonic().pitchClass
+	
+	for note_ in line:
+		
+		if isinstance(note_, note.Rest):
+			outline.append(str(-1))
+		else:
+			outline.append(str((note_.pitch.pitchClass - tonic) % 12))
+			
+	return outline
+
+
+def embellisher_to_midi(out_name, test_emb):
+	mf = midi.MidiFile()
+	mf.ticksPerQuarterNote = 1024 # cannot use: 10080
+	mf.tracks.append(test_emb.soprano.write('midi'))
+	mf.tracks.append(test_emb.alto.write('midi'))
+	mf.tracks.append(test_emb.tenor.write('midi'))
+	mf.tracks.append(test_emb.bass.write('midi'))
+
+	melody = test_emb.soprano
+	alto = test_emb.alto
+	tenor = test_emb.tenor
+	bass = test_emb.bass
+
+	# conjoin two parts and shows
+	s = stream.Score()
+
+	out_stream = stream.Stream()
+	soprano_flat = list(melody.recurse(classFilter=('Note', 'Rest')))
+	melody = extract_utils.flattened_to_stream(
+		soprano_flat,
+		test_emb.bass,
+		out_stream,
+		'Soprano',
+		test_emb.fermata_layer
+	)
+
+	s.insert(0, stream.Part(melody))
+	s.insert(0, stream.Part(alto))
+	s.insert(0, stream.Part(tenor))
+	s.insert(0, stream.Part(bass))
+	s.write('midi', '{}.midi'.format(out_name))
+	

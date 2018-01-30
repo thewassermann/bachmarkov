@@ -56,7 +56,7 @@ class GibbsBooleanSampler():
 			key : name of constraint, value : float
 	"""
 
-	def __init__(self, bassline, vocal_range_dict, chords, soprano, constraint_dict, fermata_layer, T, alpha, ps, weight_dict=None, thinning=1):
+	def __init__(self, bassline, vocal_range_dict, chords, soprano, constraint_dict, fermata_layer, T, alpha, ps, weight_dict=None, thinning=1, progress_bar_off=True):
 
 		self.bassline = extract_utils.to_crotchet_stream(bassline)
 		self.key = bassline.analyze('key')
@@ -76,6 +76,8 @@ class GibbsBooleanSampler():
 		self.fermata_layer = fermata_layer
 		self.weight_dict = self.set_weight_dict(weight_dict)
 		self.thinning = thinning
+
+		self.progress_bar_off = progress_bar_off
 
 
 	def set_weight_dict(self, weight_dict):
@@ -196,7 +198,7 @@ class GibbsBooleanSampler():
 			# profile_df.columns = list(self.constraint_dict.keys())
 			profile_array = np.empty((int(np.floor(n_iter/self.thinning)), ))
 
-		for i in trange(n_iter, desc='Iteration', disable=True):
+		for i in trange(n_iter, desc='Iteration', disable=self.progress_bar_off):
 		# for i in np.arange(n_iter):
 
 			# get length of the chorale
@@ -347,7 +349,7 @@ class GibbsBooleanSampler():
 		soprano = list(self.soprano.recurse(classFilter=('Note', 'Rest')))
 		flat_alto = list(self.alto.recurse(classFilter=('Note', 'Rest')))
 		flat_tenor = list(self.tenor.recurse(classFilter=('Note', 'Rest')))
-		bass = list(self.bass.recurse(classFilter=('Note', 'Rest')))
+		bass = list(self.bassline.recurse(classFilter=('Note', 'Rest')))
 
 		p_is = np.empty((len(flat_tenor * 2),))
 		
@@ -363,7 +365,7 @@ class GibbsBooleanSampler():
 				part_name = 'Alto'
 			
 			# if rest, rest is only choice
-			if self.chords[index_cnt] == -1 or isinstance(soprano[index_cnt], note.Rest) or isinstance(bass[index_cnt], note.Rest):
+			if self.chords[index_cnt] == -1 or isinstance(flat_tenor[index_cnt], note.Rest) or isinstance(flat_alto[index_cnt], note.Rest):
 				p_is[j] = 1
 				continue
 			
