@@ -48,7 +48,7 @@ class MOWILE():
 			
 	"""
 	
-	def __init__(self, chorale, budget, n_restarts, beta, alpha, weight_upper_bound, model):
+	def __init__(self, chorale, budget, n_restarts, beta, alpha, weight_upper_bound, model, lambda_1, lambda_2, progress_bar_off=True):
 		self.chorale = chorale
 		self.budget = budget
 		self.n_restarts = n_restarts
@@ -56,6 +56,9 @@ class MOWILE():
 		self.alpha = alpha
 		self.weight_upper_bound = weight_upper_bound
 		self.model = model
+		self.lambda_1 = lambda_1
+		self.lambda_2 = lambda_2
+		self.progress_bar_off = progress_bar_off
 		
 		# initializing parameters
 		self.I = np.zeros((1, len(list(self.model.constraint_dict.keys()))))
@@ -146,7 +149,7 @@ class MOWILE():
 				# find the likelihood under the model
 				model_ = self.model
 				model_.weight_dict = {k: possible_points[j, idx] for idx, k in enumerate(list(self.model.constraint_dict.keys()))}
-				points_score[j] = model_.log_likelihood()
+				points_score[j] = model_.log_likelihood(list(model_.weight_dict.values()), self.lambda_1, self.lambda_2)
 			
 			# get new lower left coords and 
 			center_coords = possible_points[np.argmin(points_score), :]
@@ -175,7 +178,7 @@ class MOWILE():
 		out_df.columns = list(self.model.constraint_dict.keys()) + ['Log-Lik']
 		
 		# iterations of restarts
-		for i in trange(self.n_restarts, desc='Restart Count'):
+		for i in trange(self.n_restarts, desc='Restart Count', disable=self.progress_bar_off):
 			weights, score = self.exploitation()
 			out_df.iloc[i, :-1] = weights
 			out_df.loc[i, 'Log-Lik']

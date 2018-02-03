@@ -85,7 +85,7 @@ def degrees_on_beats(chorale):
 	return rn_outstream
 
 
-def random_note_in_chord_and_vocal_range(relPitchList, key, vocal_range):
+def random_note_in_chord_and_vocal_range(relPitchList, key, vocal_range, prev_note):
 	"""
 	Function to return a random note in the chord within a given range
 	"""
@@ -96,6 +96,15 @@ def random_note_in_chord_and_vocal_range(relPitchList, key, vocal_range):
 
 	# extract_range
 	lowest_note, highest_note = vocal_range
+
+	if (not isinstance(prev_note, note.Rest)) and (prev_note is not None):
+
+		# restrict intervals to a sixth
+		if prev_note.pitch.transpose(-7) > lowest_note:
+			lowest_note = prev_note.pitch.transpose(-7)
+
+		if prev_note.pitch.transpose(7) < highest_note:
+			highest_note = prev_note.pitch.transpose(7)
 
 	# turn relative Pitch into a note.Note
 	notes = []

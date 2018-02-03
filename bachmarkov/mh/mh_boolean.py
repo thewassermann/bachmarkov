@@ -59,9 +59,10 @@ class MCMCBooleanSampler():
 			before stopping
 	"""
 	
-	def __init__(self, bassline, vocal_range, chords, constraint_dict, fermata_layer, T, alpha, ps, weight_dict=None, thinning=1, progress_bar_off=True):
+	def __init__(self, bassline, vocal_range, chords, constraint_dict, fermata_layer, T, alpha, ps, weight_dict=None, thinning=1, progress_bar_off=True, cross_constraints=False):
 		
 		self.bassline = extract_utils.to_crotchet_stream(bassline)
+		self.bass = list(self.bassline.recurse(classFilter=('Note', 'Rest')))
 		self.key = bassline.analyze('key')
 		self.vocal_range = vocal_range
 		self.chords = chords
@@ -71,10 +72,12 @@ class MCMCBooleanSampler():
 		self.alpha = alpha
 		self.ps = ps
 		self.soprano = self.init_melody()
+		self.melody = list(self.soprano.recurse(classFilter=('Note', 'Rest')))
 		self.fermata_layer = fermata_layer
 		self.weight_dict = self.set_weight_dict(weight_dict)
 		self.thinning = thinning
 		self.progress_bar_off = progress_bar_off
+		self.cross_constraints = cross_constraints
 
 
 	def set_weight_dict(self, weight_dict):
@@ -117,10 +120,14 @@ class MCMCBooleanSampler():
 				m = stream.Measure()
 				for measure_el in el:
 					if isinstance(measure_el, note.Note):
+
 						out_note_choices =  chord_utils.random_note_in_chord_and_vocal_range(
 							extract_utils.extract_notes_from_chord(self.chords[chord_idx]),
 							self.key,
-							self.vocal_range)
+							self.vocal_range,
+							None
+						)
+													
 						out_note = np.random.choice(out_note_choices)
 						m.insert(measure_el.offset, out_note)
 					else:
@@ -130,7 +137,8 @@ class MCMCBooleanSampler():
 			elif isinstance (el, (note.Note, note.Rest)):
 				continue
 			else:
-				out_stream.insert(el.offset, copy.deepcopy(el))
+				# may need deepcopy
+				out_stream.insert(el.offset, copy.copy(el))
 
 		return out_stream
 		
@@ -164,13 +172,27 @@ class MCMCBooleanSampler():
 			# choose whether to local search or metropolis
 			if np.random.uniform() <= self.ps:
 				self.soprano = self.local_search(self.soprano, idx)
+
 			else:
-				# propose a note
-				possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
-					extract_utils.extract_notes_from_chord(self.chords[idx]),
-					self.key,
-					self.vocal_range
-				)
+
+				if idx == 0:
+					# propose a note
+					possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+						extract_utils.extract_notes_from_chord(self.chords[idx]),
+						self.key,
+						self.vocal_range,
+						None
+					)
+
+				else:
+
+					possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+						extract_utils.extract_notes_from_chord(self.chords[idx]),
+						self.key,
+						self.vocal_range,
+						flat_chorale[idx-1]
+					)
+
 				proposed_note = np.random.choice(possible_notes)
 				self.soprano = self.metropolis_move(self.soprano, proposed_note, idx)
 				
@@ -291,12 +313,25 @@ class MCMCBooleanSampler():
 				p_is[j] = 1
 				continue
 			
-			# possible notes
-			possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
-				extract_utils.extract_notes_from_chord(self.chords[j]),
-				self.key,
-				self.vocal_range
-			)
+			if j == 0:
+
+				# possible notes
+				possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+					extract_utils.extract_notes_from_chord(self.chords[j]),
+					self.key,
+					self.vocal_range,
+					None,
+				)
+
+			else:
+
+				# possible notes
+				possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+					extract_utils.extract_notes_from_chord(self.chords[j]),
+					self.key,
+					self.vocal_range,
+					soprano[j-1],
+				)
 			
 			# loop through notes in chorale
 			note_probabilities_dict = {}
@@ -308,15 +343,23 @@ class MCMCBooleanSampler():
 				possible_chain[j] = possible_notes[k]
 	
 				# for each note in chorale calculate p_i
+				constraints_not_met = {constraint : self.constraint_dict[constraint].not_satisfied(self, possible_chain, j) for constraint in list(self.constraint_dict.keys())}
+
+				# add cross constraints if necessary
+				if self.cross_constraints:
+					for i_, k in enumerate(list(self.constraint_dict.keys())):
+						for j_, l in enumerate(list(self.constraint_dict.keys())):
+							if i_ < j_:
+								constraints_not_met['{}/{}'.format(k,l)] = constraints_not_met[k] * constraints_not_met[l]
+
 				constraints_not_met = \
-					[self.constraint_dict[constraint].not_satisfied(self, possible_chain, j) * \
-					self.weight_dict[constraint] for constraint in list(self.constraint_dict.keys())]
+					[constraints_not_met[cnm] * self.weight_dict[cnm] for cnm in list(constraints_not_met.keys())]
 				
 				note_probabilities_dict[possible_notes[k].nameWithOctave] = np.exp(-np.nansum(constraints_not_met))
 				total_sum = np.nansum(list(note_probabilities_dict.values()))
 				note_probabilities_dict = {key : note_probabilities_dict[key] / total_sum for key in list(note_probabilities_dict.keys())}
 			
-			p_is[j] = note_probabilities_dict.get(soprano[j].nameWithOctave, 0.001)
+			p_is[j] = note_probabilities_dict.get(soprano[j].nameWithOctave, 0.01)
 
 		return -np.nansum(np.log(p_is))
 		
@@ -385,13 +428,27 @@ class MCMCBooleanSampler():
 		Search through the possible notes and select the note that does not satisfy
 		the least number of constraints (a.k.a satisfies the most)
 		"""
+
+		possible_chain = list(part_.recurse(classFilter=('Note', 'Rest')))
+
+		if index_ == 0:
 		
-		possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
-			extract_utils.extract_notes_from_chord(self.chords[index_]),
-			self.key,
-			self.vocal_range
-		)
+			possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+				extract_utils.extract_notes_from_chord(self.chords[index_]),
+				self.key,
+				self.vocal_range,
+				None,
+			)
+
+		else:	
 		
+			possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+				extract_utils.extract_notes_from_chord(self.chords[index_]),
+				self.key,
+				self.vocal_range,
+				possible_chain[index_-1],
+			)
+
 		# has possible notes in dict as note.Note is an unhashable type
 		possible_dict = {n.nameWithOctave : n for n in possible_notes}
 		
@@ -401,7 +458,6 @@ class MCMCBooleanSampler():
 		for note_ in possible_notes:
 			
 			# create chain including possible note
-			possible_chain = list(part_.recurse(classFilter=('Note', 'Rest')))
 			possible_chain[index_] = note_
 			
 			if self.weight_dict is None:
@@ -434,10 +490,10 @@ class MCMCBooleanSampler():
 		"""
 		Function to cool T up to a certain level
 		"""
-		if self.T > .1:
+		if self.T > 1:
 			self.T = self.alpha * self.T
 
-		# lower bound to confirm convergence
+		#lower bound to confirm convergence
 		# if self.T > 1:
 		# 	self.T = T_0 / np.log(2 + iter_)
 
@@ -543,10 +599,9 @@ class NoIllegalJumps(Constraint):
 		
 			bool
 		"""
-		int_type_identifier = interval.Interval(note_1.pitch, note_2.pitch).name[0]
 		
 		# if augmented or diminished interval
-		if int_type_identifier in set(['a', 'd']):
+		if (interval.notesToChromatic(note_1, note_2).semitones  % 12) == 6:
 			return 1
 		else:
 			return 0
@@ -560,7 +615,7 @@ class NoParallelIntervals(Constraint):
 	
 	def not_satisfied(self, MCMC, chain, index_):
 		
-		bass = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
+		bass = MCMC.bass
 		
 		proposed_note = chain[index_] 
 		
@@ -668,7 +723,7 @@ class ContraryMotion(Constraint):
 	"""
 	def not_satisfied(self, MCMC, chain, index_):
 		
-		bass = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
+		bass = MCMC.bass
 		
 		proposed_note = chain[index_]
 		

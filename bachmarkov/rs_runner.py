@@ -30,10 +30,14 @@ def main():
 		num : which function to run:
 	"""
 
-	# call only if not in memory
 	chorales = data_utils.load_clean_chorales()
 
-	cd_mh = mh_boolean.create_cross_constraint_dict({
+	# call only if not in memory
+	SPLITDICT = pickle.load(open( "train_test_splits.p", "rb" ))
+
+	major_train_chorales = [chorales['Major'][idx] for idx in SPLITDICT['major_train_idx']]
+
+	cd_mh = {
 			'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
 			'NPI' : mh_boolean.NoParallelIntervals('NPI'),
 			'CM' : mh_boolean.ContraryMotion('CM'),
@@ -42,15 +46,13 @@ def main():
 			'RR' : mh_boolean.ReduceRepeated('RR'),
 			'MWT' : mh_boolean.MovementWithinThird('MWT'),
 		}, 
-		'MH'
-	)
 
 	res = regularization.MHCV(
-		np.random.choice(chorales['Major'], size=15),
-		5,
+		major_train_chorales,
+		10,
 		cd_mh,
-		[100, 10, 1, .1, .01],
-		[100, 10, 1, .1, .01]
+		[10000, 1000, 100, 10, 1, .1, .01],
+		[10000, 1000, 100, 10, 1, .1, .01]
 	)
 
 	pickle.dump(res, open( "RegularizationCV.p", "wb" ) )

@@ -112,7 +112,9 @@ def flattened_to_stream(flat, bassline, out_stream, part_, fermata_layer=None):
 
 				# check if adding would exceed measure_length
 				if note_.duration.quarterLength + length_counter <= measure_length:
-					m.insert(length_counter, copy.deepcopy(note_))
+
+					# may need deepcopy
+					m.insert(length_counter, copy.copy(note_))
 					length_counter += flat[note_index].duration.quarterLength
 					note_index += 1
 				else:
@@ -122,7 +124,8 @@ def flattened_to_stream(flat, bassline, out_stream, part_, fermata_layer=None):
 		elif isinstance (el, (note.Note, note.Rest)):
 			continue
 		else:
-			out_stream.insert(el.offset, copy.deepcopy(el))
+			# may need deepcopy
+			out_stream.insert(el.offset, copy.copy(el))
 
 	return out_stream
 
