@@ -53,12 +53,12 @@ def main():
 			major_train_chorales,
 			10,
 			cd_mh,
-			[10000, 1000],
+			[10000],
 			[10000, 1000, 100, 10, 1, .1, .01],
 			True
 		)
 
-		pickle.dump(res, open( "RegularizationCV-10000-1000.p", "wb" ) )
+		pickle.dump(res, open( "RegularizationCV-10000.p", "wb" ) )
 
 	if sys.argv[1] == '2':
 
@@ -83,12 +83,12 @@ def main():
 			major_train_chorales,
 			10,
 			cd_mh,
-			[100, 10],
+			[1000],
 			[10000, 1000, 100, 10, 1, .1, .01],
 			True
 		)
 
-		pickle.dump(res, open( "RegularizationCV-100-10.p", "wb" ) )
+		pickle.dump(res, open( "RegularizationCV-1000.p", "wb" ) )
 
 	if sys.argv[1] == '3':
 
@@ -113,14 +113,105 @@ def main():
 			major_train_chorales,
 			10,
 			cd_mh,
-			[1, .1],
+			[100],
 			[10000, 1000, 100, 10, 1, .1, .01],
 			True
 		)
 
-		pickle.dump(res, open( "RegularizationCV-1-01.p", "wb" ) )
+		pickle.dump(res, open( "RegularizationCV-100.p", "wb" ) )
 
 	if sys.argv[1] == '4':
+
+		chorales = data_utils.load_clean_chorales()
+
+		# call only if not in memory
+		SPLITDICT = pickle.load(open( "train_test_splits.p", "rb" ))
+
+		major_train_chorales = [chorales['Major'][idx] for idx in SPLITDICT['major_train_idx']]
+
+		cd_mh = {
+				'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
+				'NPI' : mh_boolean.NoParallelIntervals('NPI'),
+				'CM' : mh_boolean.ContraryMotion('CM'),
+				'NTT' : mh_boolean.NoteToTonic('NTT'),
+				'LTS' : mh_boolean.LeapThenStep('LTS'),
+				'RR' : mh_boolean.ReduceRepeated('RR'),
+				'MWT' : mh_boolean.MovementWithinThird('MWT'),
+			} 
+
+		res = regularization.MHCV(
+			major_train_chorales,
+			10,
+			cd_mh,
+			[10],
+			[10000, 1000, 100, 10, 1, .1, .01],
+			True
+		)
+
+		pickle.dump(res, open( "RegularizationCV-10.p", "wb" ) )
+
+	if sys.argv[1] == '5':
+
+		chorales = data_utils.load_clean_chorales()
+
+		# call only if not in memory
+		SPLITDICT = pickle.load(open( "train_test_splits.p", "rb" ))
+
+		major_train_chorales = [chorales['Major'][idx] for idx in SPLITDICT['major_train_idx']]
+
+		cd_mh = {
+				'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
+				'NPI' : mh_boolean.NoParallelIntervals('NPI'),
+				'CM' : mh_boolean.ContraryMotion('CM'),
+				'NTT' : mh_boolean.NoteToTonic('NTT'),
+				'LTS' : mh_boolean.LeapThenStep('LTS'),
+				'RR' : mh_boolean.ReduceRepeated('RR'),
+				'MWT' : mh_boolean.MovementWithinThird('MWT'),
+			} 
+
+		res = regularization.MHCV(
+			major_train_chorales,
+			10,
+			cd_mh,
+			[1],
+			[10000, 1000, 100, 10, 1, .1, .01],
+			True
+		)
+
+		pickle.dump(res, open( "RegularizationCV-1.p", "wb" ) )
+
+
+	if sys.argv[1] == '6':
+
+		chorales = data_utils.load_clean_chorales()
+
+		# call only if not in memory
+		SPLITDICT = pickle.load(open( "train_test_splits.p", "rb" ))
+
+		major_train_chorales = [chorales['Major'][idx] for idx in SPLITDICT['major_train_idx']]
+
+		cd_mh = {
+				'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
+				'NPI' : mh_boolean.NoParallelIntervals('NPI'),
+				'CM' : mh_boolean.ContraryMotion('CM'),
+				'NTT' : mh_boolean.NoteToTonic('NTT'),
+				'LTS' : mh_boolean.LeapThenStep('LTS'),
+				'RR' : mh_boolean.ReduceRepeated('RR'),
+				'MWT' : mh_boolean.MovementWithinThird('MWT'),
+			} 
+
+		res = regularization.MHCV(
+			major_train_chorales,
+			10,
+			cd_mh,
+			[.1],
+			[10000, 1000, 100, 10, 1, .1, .01],
+			True
+		)
+
+		pickle.dump(res, open( "RegularizationCV-01.p", "wb" ) )
+
+	if sys.argv[1] == '7':
 
 		chorales = data_utils.load_clean_chorales()
 
