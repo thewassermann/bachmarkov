@@ -100,11 +100,11 @@ def random_note_in_chord_and_vocal_range(relPitchList, key, vocal_range, prev_no
 	if (not isinstance(prev_note, note.Rest)) and (prev_note is not None):
 
 		# restrict intervals to a sixth
-		if prev_note.pitch.transpose(-7) > lowest_note:
-			lowest_note = prev_note.pitch.transpose(-7)
+		if prev_note.pitch.transpose(-5) > lowest_note:
+			lowest_note = prev_note.pitch.transpose(-5)
 
-		if prev_note.pitch.transpose(7) < highest_note:
-			highest_note = prev_note.pitch.transpose(7)
+		if prev_note.pitch.transpose(5) < highest_note:
+			highest_note = prev_note.pitch.transpose(5)
 
 	# turn relative Pitch into a note.Note
 	notes = []

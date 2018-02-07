@@ -20,6 +20,7 @@ import pickle
 
 import sys
 
+
 def main():
 	"""
 	Command line interface for  random search:
@@ -30,216 +31,94 @@ def main():
 		num : which function to run:
 	"""
 
+	cd_gibbs = {
+			'NC' : gibbs_boolean.NoCrossing('NC'),
+			'SWM' : gibbs_boolean.StepwiseMotion('SWM'),
+			'NPI' : gibbs_boolean.NoParallelIntervals('NPI'),
+			'OM' : gibbs_boolean.OctaveMax('OM'),
+			'NN' : gibbs_boolean.NewNotes('NN'), 
+		}
+
+	chorales = data_utils.load_clean_chorales()
+
+	# call only if not in memory
+	SPLITDICT = pickle.load(open( "train_test_splits.p", "rb" ))
+
+	major_train_chorales = [chorales['Major'][idx] for idx in SPLITDICT['major_train_idx']]
+
 	if sys.argv[1] == '1':
 
-		chorales = data_utils.load_clean_chorales()
-
-		# call only if not in memory
-		SPLITDICT = pickle.load(open( "train_test_splits.p", "rb" ))
-
-		major_train_chorales = [chorales['Major'][idx] for idx in SPLITDICT['major_train_idx']]
-
-		cd_mh = {
-				'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
-				'NPI' : mh_boolean.NoParallelIntervals('NPI'),
-				'CM' : mh_boolean.ContraryMotion('CM'),
-				'NTT' : mh_boolean.NoteToTonic('NTT'),
-				'LTS' : mh_boolean.LeapThenStep('LTS'),
-				'RR' : mh_boolean.ReduceRepeated('RR'),
-				'MWT' : mh_boolean.MovementWithinThird('MWT'),
-			} 
-
-		res = regularization.MHCV(
+		res = regularization.MHCVGibbs(
 			major_train_chorales,
 			10,
-			cd_mh,
-			[10000],
-			[10000, 1000, 100, 10, 1, .1, .01],
-			True
+			cd_gibbs,
+			[100000],
+			[100000, 10000, 1000, 100, 10, 1],
 		)
 
-		pickle.dump(res, open( "RegularizationCV-10000.p", "wb" ) )
+		pickle.dump(res, open( "GibbsRegularizationCV-100000.p", "wb" ) )
 
 	if sys.argv[1] == '2':
 
-		chorales = data_utils.load_clean_chorales()
-
-		# call only if not in memory
-		SPLITDICT = pickle.load(open( "train_test_splits.p", "rb" ))
-
-		major_train_chorales = [chorales['Major'][idx] for idx in SPLITDICT['major_train_idx']]
-
-		cd_mh = {
-				'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
-				'NPI' : mh_boolean.NoParallelIntervals('NPI'),
-				'CM' : mh_boolean.ContraryMotion('CM'),
-				'NTT' : mh_boolean.NoteToTonic('NTT'),
-				'LTS' : mh_boolean.LeapThenStep('LTS'),
-				'RR' : mh_boolean.ReduceRepeated('RR'),
-				'MWT' : mh_boolean.MovementWithinThird('MWT'),
-			} 
-
-		res = regularization.MHCV(
+		res = regularization.MHCVGibbs(
 			major_train_chorales,
 			10,
-			cd_mh,
-			[1000],
-			[10000, 1000, 100, 10, 1, .1, .01],
-			True
+			cd_gibbs,
+			[10000],
+			[100000, 10000, 1000, 100, 10, 1],
 		)
 
-		pickle.dump(res, open( "RegularizationCV-1000.p", "wb" ) )
+		pickle.dump(res, open( "GibbsRegularizationCV-10000.p", "wb" ) )
 
 	if sys.argv[1] == '3':
 
-		chorales = data_utils.load_clean_chorales()
-
-		# call only if not in memory
-		SPLITDICT = pickle.load(open( "train_test_splits.p", "rb" ))
-
-		major_train_chorales = [chorales['Major'][idx] for idx in SPLITDICT['major_train_idx']]
-
-		cd_mh = {
-				'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
-				'NPI' : mh_boolean.NoParallelIntervals('NPI'),
-				'CM' : mh_boolean.ContraryMotion('CM'),
-				'NTT' : mh_boolean.NoteToTonic('NTT'),
-				'LTS' : mh_boolean.LeapThenStep('LTS'),
-				'RR' : mh_boolean.ReduceRepeated('RR'),
-				'MWT' : mh_boolean.MovementWithinThird('MWT'),
-			} 
-
-		res = regularization.MHCV(
+		res = regularization.MHCVGibbs(
 			major_train_chorales,
 			10,
-			cd_mh,
-			[100],
-			[10000, 1000, 100, 10, 1, .1, .01],
-			True
+			cd_gibbs,
+			[1000],
+			[100000, 10000, 1000, 100, 10, 1],
 		)
 
-		pickle.dump(res, open( "RegularizationCV-100.p", "wb" ) )
+		pickle.dump(res, open( "GibbsRegularizationCV-1000.p", "wb" ) )
+
 
 	if sys.argv[1] == '4':
 
-		chorales = data_utils.load_clean_chorales()
-
-		# call only if not in memory
-		SPLITDICT = pickle.load(open( "train_test_splits.p", "rb" ))
-
-		major_train_chorales = [chorales['Major'][idx] for idx in SPLITDICT['major_train_idx']]
-
-		cd_mh = {
-				'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
-				'NPI' : mh_boolean.NoParallelIntervals('NPI'),
-				'CM' : mh_boolean.ContraryMotion('CM'),
-				'NTT' : mh_boolean.NoteToTonic('NTT'),
-				'LTS' : mh_boolean.LeapThenStep('LTS'),
-				'RR' : mh_boolean.ReduceRepeated('RR'),
-				'MWT' : mh_boolean.MovementWithinThird('MWT'),
-			} 
-
-		res = regularization.MHCV(
+		res = regularization.MHCVGibbs(
 			major_train_chorales,
 			10,
-			cd_mh,
-			[10],
-			[10000, 1000, 100, 10, 1, .1, .01],
-			True
+			cd_gibbs,
+			[100],
+			[100000, 10000, 1000, 100, 10, 1],
 		)
 
-		pickle.dump(res, open( "RegularizationCV-10.p", "wb" ) )
+		pickle.dump(res, open( "GibbsRegularizationCV-100.p", "wb" ) )
+
 
 	if sys.argv[1] == '5':
 
-		chorales = data_utils.load_clean_chorales()
-
-		# call only if not in memory
-		SPLITDICT = pickle.load(open( "train_test_splits.p", "rb" ))
-
-		major_train_chorales = [chorales['Major'][idx] for idx in SPLITDICT['major_train_idx']]
-
-		cd_mh = {
-				'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
-				'NPI' : mh_boolean.NoParallelIntervals('NPI'),
-				'CM' : mh_boolean.ContraryMotion('CM'),
-				'NTT' : mh_boolean.NoteToTonic('NTT'),
-				'LTS' : mh_boolean.LeapThenStep('LTS'),
-				'RR' : mh_boolean.ReduceRepeated('RR'),
-				'MWT' : mh_boolean.MovementWithinThird('MWT'),
-			} 
-
-		res = regularization.MHCV(
+		res = regularization.MHCVGibbs(
 			major_train_chorales,
 			10,
-			cd_mh,
-			[1],
-			[10000, 1000, 100, 10, 1, .1, .01],
-			True
+			cd_gibbs,
+			[10],
+			[100000, 10000, 1000, 100, 10, 1],
 		)
 
-		pickle.dump(res, open( "RegularizationCV-1.p", "wb" ) )
-
+		pickle.dump(res, open( "GibbsRegularizationCV-10.p", "wb" ) )
 
 	if sys.argv[1] == '6':
 
-		chorales = data_utils.load_clean_chorales()
-
-		# call only if not in memory
-		SPLITDICT = pickle.load(open( "train_test_splits.p", "rb" ))
-
-		major_train_chorales = [chorales['Major'][idx] for idx in SPLITDICT['major_train_idx']]
-
-		cd_mh = {
-				'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
-				'NPI' : mh_boolean.NoParallelIntervals('NPI'),
-				'CM' : mh_boolean.ContraryMotion('CM'),
-				'NTT' : mh_boolean.NoteToTonic('NTT'),
-				'LTS' : mh_boolean.LeapThenStep('LTS'),
-				'RR' : mh_boolean.ReduceRepeated('RR'),
-				'MWT' : mh_boolean.MovementWithinThird('MWT'),
-			} 
-
-		res = regularization.MHCV(
+		res = regularization.MHCVGibbs(
 			major_train_chorales,
 			10,
-			cd_mh,
-			[.1],
-			[10000, 1000, 100, 10, 1, .1, .01],
-			True
+			cd_gibbs,
+			[1],
+			[100000, 10000, 1000, 100, 10, 1],
 		)
 
-		pickle.dump(res, open( "RegularizationCV-01.p", "wb" ) )
-
-	if sys.argv[1] == '7':
-
-		chorales = data_utils.load_clean_chorales()
-
-		# call only if not in memory
-		SPLITDICT = pickle.load(open( "train_test_splits.p", "rb" ))
-
-		major_train_chorales = [chorales['Major'][idx] for idx in SPLITDICT['major_train_idx']]
-
-		cd_mh = {
-				'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
-				'NPI' : mh_boolean.NoParallelIntervals('NPI'),
-				'CM' : mh_boolean.ContraryMotion('CM'),
-				'NTT' : mh_boolean.NoteToTonic('NTT'),
-				'LTS' : mh_boolean.LeapThenStep('LTS'),
-				'RR' : mh_boolean.ReduceRepeated('RR'),
-				'MWT' : mh_boolean.MovementWithinThird('MWT'),
-			} 
-
-		res = regularization.MHCV(
-			major_train_chorales,
-			10,
-			cd_mh,
-			[.01],
-			[10000, 1000, 100, 10, 1, .1, .01],
-			True
-		)
-
-		pickle.dump(res, open( "RegularizationCV-001.p", "wb" ) )
+		pickle.dump(res, open( "GibbsRegularizationCV-1.p", "wb" ) )
 
 if __name__ == '__main__':
    main()

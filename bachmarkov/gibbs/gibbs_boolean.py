@@ -61,7 +61,7 @@ class GibbsBooleanSampler():
 		self.bassline = extract_utils.to_crotchet_stream(bassline)
 		self.key = bassline.analyze('key')
 		self.chords = chords
-		self.soprano = soprano
+		self.soprano = extract_utils.to_crotchet_stream(soprano)
 		self.constraint_dict = constraint_dict
 		self.T_0 = T
 		self.T = T
@@ -72,6 +72,11 @@ class GibbsBooleanSampler():
 
 		self.alto = self.init_part('Alto', self.vocal_range_dict['Alto'], self.chords)
 		self.tenor = self.init_part('Tenor', self.vocal_range_dict['Tenor'], self.chords)
+
+		self.soprano_flat = list(self.soprano.recurse(classFilter=('Note', 'Rest')))
+		self.alto_flat = list(self.alto.recurse(classFilter=('Note', 'Rest')))
+		self.tenor_flat = list(self.tenor.recurse(classFilter=('Note', 'Rest')))
+		self.bass_flat = list(self.bassline.recurse(classFilter=('Note', 'Rest')))
 
 		self.fermata_layer = fermata_layer
 		self.weight_dict = self.set_weight_dict(weight_dict)
@@ -134,7 +139,9 @@ class GibbsBooleanSampler():
 						out_note_choices =  chord_utils.random_note_in_chord_and_vocal_range(
 							extract_utils.extract_notes_from_chord(self.chords[chord_idx]),
 							self.key,
-							part_range)
+							part_range,
+							None
+						)
 						out_note = np.random.choice(out_note_choices)
 						m.insert(measure_el.offset, out_note)
 						chord_idx += 1
@@ -458,16 +465,16 @@ class NoCrossing(GibbsConstraint):
 
 	def not_satisfied(self, MCMC, chain, index_, part_name):
 		
-		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note', 'Rest')))
+		soprano_ = MCMC.soprano_flat
 
 		if part_name == 'Alto':
 			alto_ = chain
-			tenor_ = list(MCMC.tenor.recurse(classFilter=('Note', 'Rest')))
+			tenor_ = MCMC.tenor_flat
 		else:
-			alto_ = list(MCMC.alto.recurse(classFilter=('Note', 'Rest')))
+			alto_ = MCMC.alto_flat
 			tenor_ = chain
 
-		bass_ = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
+		bass_ = MCMC.bass_flat
 
 		if self.has_crossing(
 			soprano_[index_].pitch,
@@ -482,10 +489,10 @@ class NoCrossing(GibbsConstraint):
 
 	def profiling(self, MCMC):
 
-		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note')))
-		alto_ = list(MCMC.alto.recurse(classFilter=('Note')))
-		tenor_ = list(MCMC.tenor.recurse(classFilter=('Note')))
-		bass_ = list(MCMC.bassline.recurse(classFilter=('Note')))
+		soprano_ = list(MCMC.soprano_flat)
+		alto_ = list(MCMC.alto_flat)
+		tenor_ = list(MCMC.tenor_flat)
+		bass_ = list(MCMC.bass_flat)
 
 		crossing_count = 0
 		for i in np.arange(len(soprano_)):
@@ -543,8 +550,8 @@ class StepwiseMotion(GibbsConstraint):
 
 	def profiling(self, MCMC):
 
-		alto_ = list(MCMC.alto.recurse(classFilter=('Note')))
-		tenor_ = list(MCMC.tenor.recurse(classFilter=('Note')))
+		alto_ = list(MCMC.alto_flat)
+		tenor_ = list(MCMC.tenor_flat)
 
 		alto_intervals = extract_utils.get_intervals(alto_)
 		tenor_intervals = extract_utils.get_intervals(tenor_)
@@ -581,16 +588,16 @@ class NoParallelIntervals(GibbsConstraint):
 
 	def not_satisfied(self, MCMC, chain, index_, part_name):
 
-		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note', 'Rest')))
+		soprano_ = MCMC.soprano_flat
 
 		if part_name == 'Alto':
 			alto_ = chain
-			tenor_ = list(MCMC.tenor.recurse(classFilter=('Note', 'Rest')))
+			tenor_ = MCMC.tenor_flat
 		else:
-			alto_ = list(MCMC.alto.recurse(classFilter=('Note', 'Rest')))
+			alto_ = MCMC.alto_flat
 			tenor_ = chain
 
-		bass_ = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
+		bass_ = MCMC.bass_flat
 
 
 		part_list = [soprano_, alto_, tenor_, bass_]
@@ -666,15 +673,14 @@ class OctaveMax(GibbsConstraint):
 
 	def not_satisfied(self, MCMC, chain, index_, part_name):
 
-		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note', 'Rest')))
-
+		soprano_ = MCMC.soprano_flat
 		if isinstance(soprano_[index_], note.Rest):
 			return 0
 
 
 		if part_name == 'Alto':
 			alto_ = chain
-			tenor_ = list(MCMC.tenor.recurse(classFilter=('Note', 'Rest')))
+			tenor_ = MCMC.tenor_flat
 
 			if (self.octave_plus(alto_[index_], soprano_[index_]) == 1) or \
 				(self.octave_plus(tenor_[index_], alto_[index_]) == 1):
@@ -682,7 +688,7 @@ class OctaveMax(GibbsConstraint):
 			else:
 				return 0
 		else:
-			alto_ = list(MCMC.alto.recurse(classFilter=('Note', 'Rest')))
+			alto_ = MCMC.alto_flat
 			tenor_ = chain
 
 			if self.octave_plus(tenor_[index_], alto_[index_]) == 1:
@@ -723,14 +729,14 @@ class NewNotes(GibbsConstraint):
 
 	def not_satisfied(self, MCMC, chain, index_, part_name):
 		
-		soprano_ = list(MCMC.soprano.recurse(classFilter=('Note', 'Rest')))
-		bass_ = list(MCMC.bassline.recurse(classFilter=('Note', 'Rest')))
+		soprano_ = MCMC.soprano_flat
+		bass_ = MCMC.bass_flat
 
 		if part_name == 'Alto':
-			tenor_ = list(MCMC.tenor.recurse(classFilter=('Note', 'Rest')))
+			tenor_ = MCMC.tenor_flat
 			other_notes = [soprano_[index_], tenor_[index_], bass_[index_]]
 		else:
-			alto_ = list(MCMC.alto.recurse(classFilter=('Note', 'Rest')))
+			alto_ = MCMC.alto_flat
 			other_notes = [soprano_[index_], alto_[index_], bass_[index_]]
 
 		if self.not_new_note(chain[index_], other_notes) == 1:

@@ -125,7 +125,7 @@ class MCMCBooleanSampler():
 							extract_utils.extract_notes_from_chord(self.chords[chord_idx]),
 							self.key,
 							self.vocal_range,
-							None
+							None,
 						)
 													
 						out_note = np.random.choice(out_note_choices)
@@ -162,12 +162,14 @@ class MCMCBooleanSampler():
 			# profile_df.index = np.arange(n_iter)
 			# profile_df.columns = list(self.constraint_dict.keys())
 			profile_array = np.empty((int(np.floor(n_iter/self.thinning)), ))
-		
+
+
+		loop_count = 0
 		for i in trange(n_iter, desc='Iteration', disable=self.progress_bar_off):
 		# for i in np.arange(n_iter):
 			
-			# choose a random index
-			idx = np.random.choice(no_rests_idxs)
+			# loop through forwards and bachwards
+			idx = no_rests_idxs[i - (loop_count * len(no_rests_idxs))]
 			
 			# choose whether to local search or metropolis
 			if np.random.uniform() <= self.ps:
@@ -203,8 +205,18 @@ class MCMCBooleanSampler():
 			if profiling and (i % self.thinning == 0):
 				profile_array[int(i / self.thinning)] = self.log_likelihood()
 
-			# simulated annealing step
-			self.simulated_annealing(i, self.T)
+			# # simulated annealing step
+			# self.simulated_annealing(i, self.T)
+
+			# decide whether to loop or not
+			if i % len(no_rests_idxs) == len(no_rests_idxs) - 1:
+				loop_count += 1
+
+			# backwards on alternate loops
+			if loop_count % 2 == 1:
+				no_rests_idxs.reverse()
+
+
 				
 		#self.show_melody_bass()
 		
