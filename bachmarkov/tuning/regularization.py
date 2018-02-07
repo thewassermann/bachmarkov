@@ -379,7 +379,7 @@ class GibbsMinimizer(gibbs_boolean.GibbsBooleanSampler):
 
 			# if rest, rest is only choice
 			if self.chords[index_cnt] == -1 or isinstance(tenor[index_cnt], note.Rest) or isinstance(alto[index_cnt], note.Rest):
-				p_is[j] = 1
+				p_is.append(1)
 				continue
 
 			if index_cnt == 0:
