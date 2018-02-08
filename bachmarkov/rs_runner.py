@@ -31,15 +31,15 @@ def main():
 		num : which function to run:
 	"""
 
-cd_mh = {
-        'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
-        'NPI' : mh_boolean.NoParallelIntervals('NPI'),
-        'CM' : mh_boolean.ContraryMotion('CM'),
-        'NTT' : mh_boolean.NoteToTonic('NTT'),
-        'LTS' : mh_boolean.LeapThenStep('LTS'),
-        'SWM' : mh_boolean.StepwiseMotion('SWM'),
-        'FD' : mh_boolean.FollowDirection('FD')
-        }
+	cd_mh = {
+		'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
+		'NPI' : mh_boolean.NoParallelIntervals('NPI'),
+		'CM' : mh_boolean.ContraryMotion('CM'),
+		'NTT' : mh_boolean.NoteToTonic('NTT'),
+		'LTS' : mh_boolean.LeapThenStep('LTS'),
+		'SWM' : mh_boolean.StepwiseMotion('SWM'),
+		'FD' : mh_boolean.FollowDirection('FD')
+	}
 
 	chorales = data_utils.load_clean_chorales()
 
