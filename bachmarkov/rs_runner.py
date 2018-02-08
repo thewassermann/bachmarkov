@@ -5,7 +5,7 @@ import pandas as pd
 import matplotlib 
 matplotlib.use('Agg')
 
-from mh import mh, mh_boolean, mowile
+from mh import mh_boolean
 from gibbs import gibbs, gibbs_boolean
 from tuning import convergence_diagnostics
 from tuning import random_search
