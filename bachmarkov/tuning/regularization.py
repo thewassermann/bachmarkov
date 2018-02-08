@@ -185,9 +185,7 @@ class MCMCMinimizer(mh_boolean.MCMCBooleanSampler):
 		
 		wd_, wd_cross = self.split_dicts(weight_dict)
 
-		return -np.nansum(np.log(p_is)) + \
-			(lambda_1 * np.nansum(np.array(list(wd_.values()))**2)) + \
-			(lambda_2 * np.nansum(np.array(list(wd_cross.values()))**2))
+		return -np.nansum(np.log(p_is))
 	
 	
 	
@@ -561,9 +559,7 @@ class GibbsMinimizer(gibbs_boolean.GibbsBooleanSampler):
 		wd_, wd_cross = self.split_dicts(weight_dict)
 
 		# return scores
-		return -np.nansum(np.log(p_is)) + \
-			(lambda_1 * np.nansum(np.array(list(wd_.values()))**2)) + \
-			(lambda_2 * np.nansum(np.array(list(wd_cross.values()))**2))
+		return -np.nansum(np.log(p_is))
 
 def optimize_chorales_gibbs(chorale, cd_gibbs, lambda_1, lambda_2):
 

@@ -149,7 +149,7 @@ class MCMCBooleanSampler():
 		"""
 		
 		# get length of the chorale
-		flat_chorale = list(self.soprano.recurse(classFilter=('Note', 'Rest')))
+		flat_chorale = self.melody
 		len_chorale = len(flat_chorale)
 		
 		# get index of rests 
@@ -173,7 +173,7 @@ class MCMCBooleanSampler():
 			
 			# choose whether to local search or metropolis
 			if np.random.uniform() <= self.ps:
-				self.soprano = self.local_search(self.soprano, idx)
+				self.melody = self.local_search(self.melody, idx)
 
 			else:
 
@@ -196,7 +196,7 @@ class MCMCBooleanSampler():
 					)
 
 				proposed_note = np.random.choice(possible_notes)
-				self.soprano = self.metropolis_move(self.soprano, proposed_note, idx)
+				self.melody = self.metropolis_move(self.melody, proposed_note, idx)
 				
 				
 			# run the profiler
@@ -271,6 +271,8 @@ class MCMCBooleanSampler():
 
 			plt.plot(np.arange(int(np.floor(n_iter/self.thinning))) * self.thinning, profile_array)
 
+		self.soprano = extract_utils.flattened_to_stream(self.melody, self.bassline, stream.Stream(), 'Soprano', fermata_layer=self.fermata_layer)
+
 		if profiling:
 			# return profile_df.mean(axis=1)
 			# return the whole df
@@ -298,8 +300,8 @@ class MCMCBooleanSampler():
 			self.fermata_layer
 		)
 
-		s.insert(0, stream.Part(melody))
-		s.insert(0, stream.Part(bass))
+		s.insert(0, copy.deepcopy(stream.Part(melody)))
+		s.insert(0, copy.deepcopy(stream.Part(bass)))
 		s.show(show_command)
 
 
@@ -313,8 +315,8 @@ class MCMCBooleanSampler():
 		Calculate the loglikelihood of the chain for each iteration
 		"""
 
-		soprano = list(self.soprano.recurse(classFilter=('Note', 'Rest')))
-		bass = list(self.bassline.recurse(classFilter=('Note', 'Rest')))
+		soprano = self.melody
+		bass = self.bass
 
 		p_is = np.empty((len(bass), ))
 
@@ -385,7 +387,7 @@ class MCMCBooleanSampler():
 		"""
 		
 		# turn part_ into a list
-		current_chain = list(part_.recurse(classFilter=('Note', 'Rest')))
+		current_chain = part_
 		
 		# create the proposal chain
 		proposed_chain = current_chain[:]
@@ -418,12 +420,7 @@ class MCMCBooleanSampler():
 		
 		# accept with probability p
 		if np.random.uniform() <= p:
-			return extract_utils.flattened_to_stream(
-				proposed_chain,
-				self.bassline,
-				stream.Stream(),
-				'Soprano'
-			)
+			return proposed_chain
 		else:
 			return part_
 
@@ -441,7 +438,7 @@ class MCMCBooleanSampler():
 		the least number of constraints (a.k.a satisfies the most)
 		"""
 
-		possible_chain = list(part_.recurse(classFilter=('Note', 'Rest')))
+		possible_chain = part_
 
 		if index_ == 0:
 		
@@ -483,19 +480,17 @@ class MCMCBooleanSampler():
 			note_constraints_dict[note_.nameWithOctave] = np.nansum(constraints_not_met)
 			
 		# get best possible note from possible notes
-		best_note = possible_dict[min(note_constraints_dict, key=note_constraints_dict.get)]
+		if len(note_constraints_dict) == 0:
+			best_note = part[index_]
+		else:
+			best_note = possible_dict[min(note_constraints_dict, key=note_constraints_dict.get)]
 		
 		# if a tie between best notes
 		# TODO
 		
-		new_chain = list(part_.recurse(classFilter=('Note', 'Rest')))
+		new_chain = part_
 		new_chain[index_] = best_note
-		return extract_utils.flattened_to_stream(
-			new_chain,
-			self.bassline,
-			stream.Stream(),
-			'Soprano'
-		)
+		return new_chain
 
 
 	def simulated_annealing(self, iter_, T_0):
@@ -1070,7 +1065,6 @@ class MovementWithinThird(Constraint):
 		else:
 			return 0
 
-
 class CrossConstraint(Constraint):
 
 	def __init__(self, name, constraint_list):
@@ -1082,6 +1076,103 @@ class CrossConstraint(Constraint):
 
 	def profiling(self, MCMC, line):
 		return np.nanprod([c.profiling(MCMC, line) for c in self.cl])
+
+
+class StepwiseMotion(Constraint):
+	"""
+	Return 1 if the interval between successive notes is not a second
+	"""
+
+	def not_satisfied(self, MCMC, chain, index_):
+
+		proposed_note = chain[index_]
+
+
+		# if at first note -> just interval after
+		if index_ == 0:
+
+			next_note = chain[index_ + 1]
+
+			# if next note is not a rest
+			if not isinstance(next_note, (note.Rest)) and \
+				(self.is_step(proposed_note, next_note) == 1):
+				return 1
+			else:
+				return 0
+
+		else:
+			previous_note = chain[index_ - 1]
+
+			if not isinstance(previous_note, (note.Rest)) and \
+				(self.is_step(previous_note, proposed_note) == 1):
+				return 1
+			else:
+				return 0
+
+
+	def is_step(self, note_1, note_2):
+		"""
+		Function that returns 1 if `note_1` and `note_2` is within a step
+
+		Parameters
+		----------
+
+			note_1 : note.Note
+			note_2 : note.Note
+		"""
+		if abs(interval.notesToChromatic(note_1, note_2).semitones) >= 2:
+			return 1
+		else:
+			return 0
+
+		
+class FollowDirection(Constraint):
+	"""
+	Return 1 if the music changes direction
+	"""
+
+	def not_satisfied(self, MCMC, chain, index_):
+
+		proposed_note = chain[index_]
+
+
+		# if at first note -> just interval after
+		if index_ == 0:
+			return 0
+		elif index_ == len(chain) -1 :
+			return 0
+		else:
+			# get notes needed
+			next_note = chain[index_ + 1]
+			previous_note = chain[index_ - 1]
+			
+
+			notes = [next_note, previous_note, proposed_note]
+			
+			# assuming neither 
+			if not any([isinstance(n, note.Rest) for n in notes]) and \
+				(self.does_not_follow(previous_note, proposed_note, next_note) == 1):
+				return 1
+			else:
+				return 0
+
+
+	def does_not_follow(self, note_1, note_2, note_3):
+		"""
+		Function that returns 1 if the direction of the interval between note_1 and
+		note_2 is different than that between note_2 and note_3
+
+		Parameters
+		----------
+
+			note_1 : note.Note
+			note_2 : note.Note
+		"""
+		if ((note_1.pitch < note_2.pitch) and (note_2.pitch < note_3.pitch)) or \
+			((note_1.pitch > note_2.pitch) and (note_2.pitch > note_3.pitch)):
+				return 0
+		else:
+			return 1
 
 
 def create_cross_constraint_dict(constraint_dict, model):
@@ -1112,36 +1203,6 @@ def create_cross_constraint_dict(constraint_dict, model):
 			
 	return cd_out  
 
-# trained weights
-# NIJ          6.720067
-# NIJ/NPI      6.602889
-# NIJ/CM       7.351684
-# NIJ/NTT      6.749566
-# NIJ/LTS      6.011395
-# NIJ/RR       7.656894
-# NIJ/MWT      6.948376
-# NPI          6.044982
-# NPI/CM       6.367033
-# NPI/NTT      7.165307
-# NPI/LTS      6.124189
-# NPI/RR       6.930095
-# NPI/MWT      5.977234
-# CM           3.956699
-# CM/NTT       7.115753
-# CM/LTS       5.530217
-# CM/RR        7.030064
-# CM/MWT       6.264896
-# NTT          6.689717
-# NTT/LTS      6.716246
-# NTT/RR       6.208140
-# NTT/MWT      6.814695
-# LTS          3.973700
-# LTS/RR       7.024067
-# LTS/MWT      3.802352
-# RR           5.215452
-# RR/MWT       5.803847
-# MWT          3.683069
-# MSE        948.166726
 
 
 		

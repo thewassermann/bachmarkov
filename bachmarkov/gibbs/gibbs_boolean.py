@@ -166,7 +166,7 @@ class GibbsBooleanSampler():
 		# add in expression
 		soprano = stream.Part(self.soprano)
 		out_stream = stream.Stream()
-		soprano_flat = list(soprano.recurse(classFilter=('Note', 'Rest')))
+		soprano_flat = self.soprano_flat
 		soprano = extract_utils.flattened_to_stream(
 			soprano_flat,
 			self.bassline,
@@ -185,10 +185,10 @@ class GibbsBooleanSampler():
 		bassline = stream.Part(self.bassline)
 		bassline.id = 'Bass'
 
-		s.insert(0, soprano)
-		s.insert(0, alto)
-		s.insert(0, tenor)
-		s.insert(0, bassline)
+		s.insert(0, copy.deepcopy(soprano))
+		s.insert(0, copy.deepcopy(alto))
+		s.insert(0, copy.deepcopy(tenor))
+		s.insert(0, copy.deepcopy(bassline))
 		return s
 
 
@@ -205,18 +205,19 @@ class GibbsBooleanSampler():
 			# profile_df.columns = list(self.constraint_dict.keys())
 			profile_array = np.empty((int(np.floor(n_iter/self.thinning)), ))
 
+		# get length of the chorale
+		len_chorale = len(self.alto_flat)
+
+		# get index of rests 
+		no_rests_idxs = [x for x in np.arange(len_chorale) if not self.alto_flat[x].isRest]
+
+
+		loop_count = 0
 		for i in trange(n_iter, desc='Iteration', disable=self.progress_bar_off):
 		# for i in np.arange(n_iter):
 
-			# get length of the chorale
-			alto_flat = list(self.alto.recurse(classFilter=('Note', 'Rest')))
-			len_chorale = len(alto_flat)
-
-			# get index of rests 
-			no_rests_idxs = [x for x in np.arange(len_chorale) if not alto_flat[x].isRest]
-
 			# choose a random index
-			idx = np.random.choice(no_rests_idxs)
+			idx = no_rests_idxs[i - (loop_count * len(no_rests_idxs))]
 
 			# choose random part
 			if np.random.uniform() < .5:
@@ -226,9 +227,9 @@ class GibbsBooleanSampler():
 
 
 			if target_part_name == 'Alto':
-				self.alto = self.local_search_gibbs(self.alto, 'Alto', idx)
+				self.alto_flat = self.local_search_gibbs(self.alto_flat, 'Alto', idx)
 			else:
-				self.tenor = self.local_search_gibbs(self.tenor, 'Tenor', idx)
+				self.tenor_flat = self.local_search_gibbs(self.tenor_flat, 'Tenor', idx)
 				
 			# run the profiler
 			# if profiling:
@@ -242,6 +243,14 @@ class GibbsBooleanSampler():
 
 			# simulated annealing step
 			self.simulated_annealing(i, self.T_0)
+
+			# decide whether to loop or not
+			if i % len(no_rests_idxs) == len(no_rests_idxs) - 1:
+				loop_count += 1
+
+			# backwards on alternate loops
+			if loop_count % 2 == 1:
+				no_rests_idxs.reverse()
 		
 		if profiling and plotting:
 
@@ -283,11 +292,13 @@ class GibbsBooleanSampler():
 
 			plt.plot(np.arange(int(np.floor(n_iter/self.thinning))) * self.thinning, profile_array)
 
+		self.alto = extract_utils.flattened_to_stream(self.alto_flat, self.bassline, stream.Stream(), 'Alto', self.fermata_layer)
+		self.tenor = extract_utils.flattened_to_stream(self.tenor_flat, self.bassline, stream.Stream(), 'Tenor', self.fermata_layer)
+
 		if profiling:
 			# return profile_df.mean(axis=1)
 			# return the whole df
 			return profile_array # profile_df
-
 
 	def local_search_gibbs(self, part_, part_name, index_):
 		"""
@@ -296,13 +307,25 @@ class GibbsBooleanSampler():
 		Search through the possible notes and select the note that does not satisfy
 		the least number of constraints (a.k.a satisfies the most)
 		"""
+
+		if index_ == 0:
 		
-		possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
-			extract_utils.extract_notes_from_chord(self.chords[index_]),
-			self.key,
-			self.vocal_range_dict[part_name]
-		)
+			possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+				extract_utils.extract_notes_from_chord(self.chords[index_]),
+				self.key,
+				self.vocal_range_dict[part_name],
+				None
+			)
+
+		else:
 		
+			possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+				extract_utils.extract_notes_from_chord(self.chords[index_]),
+				self.key,
+				self.vocal_range_dict[part_name],
+				part_[index_ -1]
+			)
+
 		# has possible notes in dict as note.Note is an unhashable type
 		possible_dict = {n.nameWithOctave : n for n in possible_notes}
 
@@ -312,7 +335,11 @@ class GibbsBooleanSampler():
 		for note_ in possible_notes:
 			
 			# create chain including possible note
-			possible_chain = list(part_.recurse(classFilter=('Note', 'Rest')))
+
+			if part_name == 'Alto':
+				possible_chain = self.alto_flat
+			else:
+				possible_chain = self.tenor_flat
 			possible_chain[index_] = note_
 
 			if self.weight_dict is None:
@@ -338,14 +365,14 @@ class GibbsBooleanSampler():
 		chosen_note_name = np.random.choice(list(note_constraints_dict.keys()), p=list(note_probs.values()))
 		chosen_note = note.Note(chosen_note_name)
 
-		new_chain = list(part_.recurse(classFilter=('Note', 'Rest')))
+		if part_name == 'Alto':
+			new_chain = self.alto_flat
+		else:
+			new_chain = self.tenor_flat
+
 		new_chain[index_] = chosen_note
-		return extract_utils.flattened_to_stream(
-			new_chain,
-			self.bassline,
-			stream.Stream(),
-			part_name,
-		)
+
+		return new_chain
 
 
 	def log_likelihood(self):
@@ -353,17 +380,17 @@ class GibbsBooleanSampler():
 		Compute loglikelihood of inner parts
 		"""
 
-		soprano = list(self.soprano.recurse(classFilter=('Note', 'Rest')))
-		flat_alto = list(self.alto.recurse(classFilter=('Note', 'Rest')))
-		flat_tenor = list(self.tenor.recurse(classFilter=('Note', 'Rest')))
-		bass = list(self.bassline.recurse(classFilter=('Note', 'Rest')))
+		soprano = self.soprano_flat
+		alto = self.alto_flat
+		tenor = self.tenor_flat
+		bass = self.bass_flat
 
-		p_is = np.empty((len(flat_tenor * 2),))
+		p_is = np.empty((len(tenor) * 2,))
 		
 		index_cnt = 0
 		part_name = 'Tenor'
 		
-		for j in np.arange(len(flat_tenor * 2)):
+		for j in np.arange(len(tenor) * 2):
 			
 			# index flag and previous part determine which part to operate on next
 			if part_name == 'Alto':
@@ -372,44 +399,77 @@ class GibbsBooleanSampler():
 				part_name = 'Alto'
 			
 			# if rest, rest is only choice
-			if self.chords[index_cnt] == -1 or isinstance(flat_tenor[index_cnt], note.Rest) or isinstance(flat_alto[index_cnt], note.Rest):
+			if self.chords[index_cnt] == -1 or isinstance(tenor[index_cnt], note.Rest) or isinstance(alto[index_cnt], note.Rest):
 				p_is[j] = 1
 				continue
 			
-			# possible notes
-			possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
-				extract_utils.extract_notes_from_chord(self.chords[index_cnt]),
-				self.key,
-				self.vocal_range_dict[part_name]
-			)
+			if index_cnt == 0:
+				# possible notes
+				possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+					extract_utils.extract_notes_from_chord(self.chords[index_cnt]),
+					self.key,
+					self.vocal_range_dict[part_name],
+					None
+				)
+			else:
+
+				if part_name == 'Alto':
+					# possible notes
+					possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+						extract_utils.extract_notes_from_chord(self.chords[index_cnt]),
+						self.key,
+						self.vocal_range_dict[part_name],
+						alto[index_cnt-1]
+					)
+				else:
+					possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+						extract_utils.extract_notes_from_chord(self.chords[index_cnt]),
+						self.key,
+						self.vocal_range_dict[part_name],
+						tenor[index_cnt-1]
+					)
 			
 			# loop through notes in chorale
 			note_probabilities_dict = {}
 			
 			# loop through possible notes alto then tenor 
-			for k in np.arange(len(possible_notes)):
+			for k_ in np.arange(len(possible_notes)):
 				
 				if part_name == 'Alto':
-					possible_chain = flat_alto[:]
-					possible_chain[index_cnt] = possible_notes[k]
-				if part_name == 'Tenor':
-					possible_chain = flat_tenor[:]
-					possible_chain[index_cnt] = possible_notes[k]
+					possible_chain = alto[:]
+				else:
+					possible_chain = tenor[:]
+				possible_chain[index_cnt] = possible_notes[k_]
+
 	
 				# for each note in chorale calculate p_i
+				# constraints_not_met = \
+				# 	[self.constraint_dict[constraint].not_satisfied(self, possible_chain, index_cnt, part_name) * \
+				# 	self.weight_dict[constraint] for constraint in list(self.constraint_dict.keys())]
+
+
+				# for each note in chorale calculate p_i
+				constraints_not_met = {constraint : self.constraint_dict[constraint].not_satisfied(self, possible_chain, index_cnt, part_name) \
+					for constraint in list(self.constraint_dict.keys())}
+
+				# add cross constraints reduces number of 
+				for i_, k in enumerate(list(self.constraint_dict.keys())):
+					for j_, l in enumerate(list(self.constraint_dict.keys())):
+						if i_ < j_:
+							constraints_not_met['{}/{}'.format(k,l)] = constraints_not_met[k] * constraints_not_met[l]
+
 				constraints_not_met = \
-					[self.constraint_dict[constraint].not_satisfied(self, possible_chain, index_cnt, part_name) * \
-					self.weight_dict[constraint] for constraint in list(self.constraint_dict.keys())]
+					[constraints_not_met[cnm] * self.weight_dict[cnm] for cnm in list(constraints_not_met.keys())]
 				
-				note_probabilities_dict[possible_notes[k].nameWithOctave] = np.exp(-np.nansum(constraints_not_met)/self.T)
+				note_probabilities_dict[possible_notes[k_].nameWithOctave] = np.exp(-np.nansum(constraints_not_met)/self.T)
 				total_sum = np.nansum(list(note_probabilities_dict.values()))
 				note_probabilities_dict = {key : note_probabilities_dict[key] / total_sum for key in list(note_probabilities_dict.keys())}
 			
 				
 			if part_name == 'Alto':
-				p_is[j] = note_probabilities_dict.get(flat_alto[index_cnt].nameWithOctave, 0.01)
+				p_is[j] = note_probabilities_dict.get(alto[index_cnt].nameWithOctave, 0.01)
 			else:
-				p_is[j] = note_probabilities_dict.get(flat_tenor[index_cnt].nameWithOctave, 0.01)
+				p_is[j] = note_probabilities_dict.get(tenor[index_cnt].nameWithOctave, 0.01)
 			
 			if j % 2 == 1:
 				index_cnt += 1 
@@ -575,7 +635,7 @@ class StepwiseMotion(GibbsConstraint):
 			note_1 : note.Note
 			note_2 : note.Note
 		"""
-		if abs(interval.notesToChromatic(note_1, note_2).semitones) >= 2:
+		if abs(interval.notesToChromatic(note_1, note_2).semitones) > 2:
 			return 1
 		else:
 			return 0

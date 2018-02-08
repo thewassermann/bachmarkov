@@ -75,19 +75,19 @@ class MH():
 		Parameters
 		---------
 
-		    bass_on_beat : music21.part
-		        bassline of a chorale parsed so
-		        only the notes on beats are included
+			bass_on_beat : music21.part
+				bassline of a chorale parsed so
+				only the notes on beats are included
 
-		    vocal_range : tuple of music21.pitch
-		        The highest and lowest note that can
-		        be sung by the vocal part to be filled in
+			vocal_range : tuple of music21.pitch
+				The highest and lowest note that can
+				be sung by the vocal part to be filled in
 
 		Returns
 		-------
 
-		    out_stream : music21.stream
-		        part initialized to random note in the range
+			out_stream : music21.stream
+				part initialized to random note in the range
 
 		"""
 		out_stream = stream.Stream()
@@ -220,7 +220,7 @@ class MH():
 
 			return note.Note(pitch_, quarterLength=1)
 
-    
+	
 	def run(self, n_iter, profiling, plotting=True):
 		"""
 		Function to run the full MH algo
@@ -447,9 +447,9 @@ class ContraryMotion(FitnessFunction):
 		Parameters
 		----------
 
-		    melody : music21.Part
-		    
-		    bass : music21.Part
+			melody : music21.Part
+			
+			bass : music21.Part
 
 		Returns
 		-------
@@ -490,15 +490,15 @@ class ContraryMotion(FitnessFunction):
 					cl = 1
 				concordance_tbl.iloc[rw,cl] += 1
 			elif (dir_p1 < 0) and (dir_p2 > 0):
-			    concordance_tbl.iloc[0, 1] += 1
+				concordance_tbl.iloc[0, 1] += 1
 			elif (dir_p1 > 0) and (dir_p2 < 0):
-			    concordance_tbl.iloc[1, 0] += 1
+				concordance_tbl.iloc[1, 0] += 1
 			elif (dir_p1 < 0) and (dir_p2 < 0):
-			    concordance_tbl.iloc[1, 1] += 1
+				concordance_tbl.iloc[1, 1] += 1
 			elif (dir_p1 > 0) and (dir_p2 > 0):
-			    concordance_tbl.iloc[0, 0] += 1
+				concordance_tbl.iloc[0, 0] += 1
 
-			    
+				
 		return concordance_tbl
 
 
@@ -520,19 +520,19 @@ class ContraryMotion(FitnessFunction):
 		contrary motiuon given a concordance table
 
 		Paper:
-		    http://journals.sagepub.com/doi/10.1177/001316446002000104
+			http://journals.sagepub.com/doi/10.1177/001316446002000104
 
 		Parameters
 		----------
 
-		    concordance_tbl : pandas.DataFrame
-		        concordance table
-		        
+			concordance_tbl : pandas.DataFrame
+				concordance table
+				
 		Returns
 		-------
 
-		    kappa : float
-		        Cohen's Kappa
+			kappa : float
+				Cohen's Kappa
 		"""
 
 		# number of entries total in table
@@ -543,9 +543,9 @@ class ContraryMotion(FitnessFunction):
 
 		# bass up at random
 		p_yes = (concordance_tbl.iloc[0,0] + concordance_tbl.iloc[0,1]) * \
-		    (concordance_tbl.iloc[0,0] + concordance_tbl.iloc[1,0]) / (N**2)
+			(concordance_tbl.iloc[0,0] + concordance_tbl.iloc[1,0]) / (N**2)
 		p_no = (concordance_tbl.iloc[0,1] + concordance_tbl.iloc[1,1]) * \
-		    (concordance_tbl.iloc[1,0] + concordance_tbl.iloc[1,1]) / (N**2)
+			(concordance_tbl.iloc[1,0] + concordance_tbl.iloc[1,1]) / (N**2)
 		random_agreement = p_yes + p_no
 
 		kappa = (contrary - random_agreement) / (1 - random_agreement)
@@ -561,13 +561,13 @@ class ContraryMotion(FitnessFunction):
 		Parameters
 		----------
 
-		    concordance_tbl : pandas.DataFrame
-		        concordance table
-		        
+			concordance_tbl : pandas.DataFrame
+				concordance table
+				
 		Returns
 		-------
 
-		    agreement_prop : float
+			agreement_prop : float
 		"""
 
 		# number of entries total in table
@@ -580,7 +580,7 @@ class ContraryMotion(FitnessFunction):
 		mcnemar_stat = (((concordance_tbl.iloc[1,0] - concordance_tbl.iloc[0,1])**2) / \
 			(concordance_tbl.iloc[1,0] + concordance_tbl.iloc[0,1])) + 0.1
 		return chi2.cdf(mcnemar_stat, df=1)
-    
+	
 	def ff(self, mh, note_, index_):
 		melody = list(mh.melody.recurse(classFilter=('Note', 'Rest')))
 		bass = list(mh.bassline.recurse(classFilter=('Note', 'Rest')))
@@ -589,7 +589,7 @@ class ContraryMotion(FitnessFunction):
 
 		ct = self.concordance_table(melody, bass)
 		return self.metric_func(ct)
-        
+		
 	def profiling(self, mh, bass, melody):
 
 		ct = self.concordance_table(melody, bass)
@@ -599,8 +599,8 @@ class ContraryMotion(FitnessFunction):
 class NotesToTonic(FitnessFunction):
 	"""
 	Function to prefer:
-	    leading note -> tonic
-	    supertonic -> tonic
+		leading note -> tonic
+		supertonic -> tonic
 	"""
 
 	def ff(self, mh, note_, index_):
@@ -621,9 +621,9 @@ class NotesToTonic(FitnessFunction):
 		else:
 			return .001
 
-    
+	
 	def profiling(self, mh, bass, melody):
-	        
+			
 			tonic = mh.key.getTonic().pitchClass
 
 			# convert all to relative pitches and rests
@@ -633,19 +633,19 @@ class NotesToTonic(FitnessFunction):
 					relMelody.append((el.pitch.pitchClass - tonic) % 12)
 				else:
 					relMelody.append(-1)
-	            
-	        
-	        # count total number of possible resolutions
+				
+			
+			# count total number of possible resolutions
 			possible_res_count = relMelody.count(1) + \
 				relMelody.count(2) + \
 				relMelody.count(10) + \
 				relMelody.count(11)
-	            
+				
 			actual_res_count = 0
 			for i in np.arange(1, len(relMelody)):
 				if (relMelody[i-1] in set([1,2,10,11])) and (relMelody[i] == 0):
 					actual_res_count += 1
-	                
+					
 			# extra added in do prevent division by zero
 			return 1 - (actual_res_count / (possible_res_count + 0.001))
 
@@ -672,14 +672,14 @@ class NoIllegalJumps(FitnessFunction):
 					return 0.001
 			else:
 				return 1.
-    
+	
 	def profiling(self, mh, bass, melody):
 
 		no_rests = [x for x in melody if not x.isRest]
 		out_stream = []
 		for i, el in enumerate(no_rests):
 
-            # first entry has no interval
+			# first entry has no interval
 			if i == 0:
 				out_stream.append('0')
 			else:
@@ -695,7 +695,7 @@ class NoConsecutiveIntervals(FitnessFunction):
 
 	To be used with octaves and fifths
 	"""
-    
+	
 	def __init__(self, name, prohibited_interval_list):
 		self.name = name
 		self.prohibited_interval_set = set(prohibited_interval_list)
@@ -713,7 +713,7 @@ class NoConsecutiveIntervals(FitnessFunction):
 			melody_intervals = [i % 12 for i in extract_utils.get_intervals(melody, index_ - 2, index_)]
 			bass_intervals = [i % 12 for i in extract_utils.get_intervals(bass, index_ - 2, index_)]
 
-            # if intervals between intervals are identical
+			# if intervals between intervals are identical
 			between_intervals = (np.array(melody_intervals) - np.array(bass_intervals))
 			if len(between_intervals) == 1:
 				return 1.
@@ -746,11 +746,11 @@ class NoConsecutiveIntervals(FitnessFunction):
 
 
 class JumpThenStep(FitnessFunction):
-    
+	
 	def ff(self, mh, note_, index_):
 
 		melody = list(mh.melody.recurse(classFilter=('Note', 'Rest')))
-        
+		
 		if index_ == len(melody) - 1:
 			s = -3
 			e = -1
@@ -768,7 +768,7 @@ class JumpThenStep(FitnessFunction):
 
 			# direction of jump
 			jump_dir = np.sign(intervals[0])
-            
+			
 			if (intervals[1] <= 2) and \
 				((np.sign(intervals[1]) == (jump_dir * -1)) or (np.sign(intervals[1]) == 0)):
 				return 1.
@@ -776,7 +776,7 @@ class JumpThenStep(FitnessFunction):
 				return 0.001
 		else:
 			return 1.
-        
+		
 	def profiling(self, mh, bass, melody):
 
 		# replace original melody note with proposed note
@@ -786,8 +786,8 @@ class JumpThenStep(FitnessFunction):
 		jump_count = 0
 		step_after_jump_count = 0
 		for i in np.arange(len(intervals) - 1):
-            
-            # identify jump
+			
+			# identify jump
 			if (intervals[i] > 4):
 				jump_count += 1
 				jump_dir = np.sign(intervals[i])
@@ -795,9 +795,106 @@ class JumpThenStep(FitnessFunction):
 				if (intervals[i + 1] <= 2) and \
 					((np.sign(intervals[i + 1]) == (jump_dir * -1)) or (np.sign(intervals[1]) == 0)):
 					step_after_jump_count += 1
-		            
+					
 		return 1 - (step_after_jump_count / (jump_count + 0.001))
-        
+
+
+class StepwiseMotion(Constraint):
+	"""
+	Return 1 if the interval between successive notes is not a second
+	"""
+
+	def not_satisfied(self, MCMC, chain, index_):
+
+		proposed_note = chain[index_]
+
+
+		# if at first note -> just interval after
+		if index_ == 0:
+
+			next_note = chain[index_ + 1]
+
+			# if next note is not a rest
+			if not isinstance(next_note, (note.Rest)) and \
+				(self.is_step(proposed_note, next_note) == 1):
+				return 1
+			else:
+				return 0
+
+		else:
+			previous_note = chain[index_ - 1]
+
+			if not isinstance(previous_note, (note.Rest)) and \
+				(self.is_step(previous_note, proposed_note) == 1):
+				return 1
+			else:
+				return 0
+
+
+	def is_step(self, note_1, note_2):
+		"""
+		Function that returns 1 if `note_1` and `note_2` is within a step
+
+		Parameters
+		----------
+
+			note_1 : note.Note
+			note_2 : note.Note
+		"""
+		if abs(interval.notesToChromatic(note_1, note_2).semitones) > 2:
+			return 1
+		else:
+			return 0
+
+		
+class FollowDirection(Constraint):
+	"""
+	Return 1 if the music changes direction
+	"""
+
+	def not_satisfied(self, MCMC, chain, index_):
+
+		proposed_note = chain[index_]
+
+
+		# if at first note -> just interval after
+		if index_ == 0:
+			return 0
+		elif index_ == len(chain) -1 :
+			return 0
+		else:
+			# get notes needed
+			next_note = chain[index_ + 1]
+			previous_note = chain[index_ - 1]
+			
+
+			notes = [next_note, previous_note, proposed_note]
+			
+			# assuming neither 
+			if not any([isinstance(n, note.Rest) for n in notes]) and \
+				(self.does_not_follow(previous_note, proposed_note, next_note) == 1):
+				return 1
+			else:
+				return 0
+
+
+	def does_not_follow(self, note_1, note_2, note_3):
+		"""
+		Function that returns 1 if the direction of the interval between note_1 and
+		note_2 is different than that between note_2 and note_3
+
+		Parameters
+		----------
+
+			note_1 : note.Note
+			note_2 : note.Note
+		"""
+		if ((note_1.pitch < note_2.pitch) and (note_2.pitch < note_3.pitch)) or \
+			((note_1.pitch > note_2.pitch) and (note_2.pitch > note_3.pitch)):
+				return 0
+		else:
+			return 1
+		
 
 ##### IMPLEMENTATIONS
 

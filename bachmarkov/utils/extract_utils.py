@@ -431,12 +431,12 @@ def embellisher_to_midi(out_name, test_emb):
 	mf.tracks.append(test_emb.soprano.write('midi'))
 	mf.tracks.append(test_emb.alto.write('midi'))
 	mf.tracks.append(test_emb.tenor.write('midi'))
-	mf.tracks.append(test_emb.bass.write('midi'))
+	mf.tracks.append(test_emb.bassline.write('midi'))
 
 	melody = test_emb.soprano
 	alto = test_emb.alto
 	tenor = test_emb.tenor
-	bass = test_emb.bass
+	bass = test_emb.bassline
 
 	# conjoin two parts and shows
 	s = stream.Score()
@@ -445,15 +445,15 @@ def embellisher_to_midi(out_name, test_emb):
 	soprano_flat = list(melody.recurse(classFilter=('Note', 'Rest')))
 	melody = extract_utils.flattened_to_stream(
 		soprano_flat,
-		test_emb.bass,
+		test_emb.bassline,
 		out_stream,
 		'Soprano',
 		test_emb.fermata_layer
 	)
 
-	s.insert(0, stream.Part(melody))
-	s.insert(0, stream.Part(alto))
-	s.insert(0, stream.Part(tenor))
-	s.insert(0, stream.Part(bass))
+	s.insert(0, copy.deepcopy(stream.Part(melody)))
+	s.insert(0, copy.deepcopy(stream.Part(alto)))
+	s.insert(0, copy.deepcopy(stream.Part(tenor)))
+	s.insert(0, copy.deepcopy(stream.Part(bass)))
 	s.write('midi', '{}.midi'.format(out_name))
 	
