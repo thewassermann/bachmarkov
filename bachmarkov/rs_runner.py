@@ -31,15 +31,13 @@ def main():
 		num : which function to run:
 	"""
 
-	cd_mh = {
-		'NIJ' : mh_boolean.NoIllegalJumps('NIJ'),
-		'NPI' : mh_boolean.NoParallelIntervals('NPI'),
-		'CM' : mh_boolean.ContraryMotion('CM'),
-		'NTT' : mh_boolean.NoteToTonic('NTT'),
-		'LTS' : mh_boolean.LeapThenStep('LTS'),
-		'SWM' : mh_boolean.StepwiseMotion('SWM'),
-		'FD' : mh_boolean.FollowDirection('FD')
-	}
+	cd_gibbs = {
+			'NC' : gibbs_boolean.NoCrossing('NC'),
+			'SWM' : gibbs_boolean.StepwiseMotion('SWM'),
+			'NPI' : gibbs_boolean.NoParallelIntervals('NPI'),
+			'OM' : gibbs_boolean.OctaveMax('OM'),
+			'NN' : gibbs_boolean.NewNotes('NN'), 
+		}
 
 	chorales = data_utils.load_clean_chorales()
 
@@ -50,83 +48,77 @@ def main():
 
 	if sys.argv[1] == '1':
 
-		res = regularization.MHCV(
+		res = regularization.MHCVGibbs(
 			major_train_chorales,
 			10,
-			cd_mh,
+			cd_gibbs,
 			[100000],
-			[100000, 10000, 1000, 100, 10, 1],
-			True
+			[100000, 10000, 1000, 100, 10, 1]
 		)
 
-		pickle.dump(res, open( "RegularizationCV-100000.p", "wb" ) )
+		pickle.dump(res, open( "GibbsRegularizationCV-100000.p", "wb" ) )
 
 	if sys.argv[1] == '2':
 
-		res = regularization.MHCV(
+		res = regularization.MHCVGibbs(
 			major_train_chorales,
 			10,
-			cd_mh,
+			cd_gibbs,
 			[10000],
-			[100000, 10000, 1000, 100, 10, 1],
-			True
+			[100000, 10000, 1000, 100, 10, 1]
 		)
 
-		pickle.dump(res, open( "RegularizationCV-10000.p", "wb" ) )
+		pickle.dump(res, open( "GibbsRegularizationCV-10000.p", "wb" ) )
 
 	if sys.argv[1] == '3':
 
-		res = regularization.MHCV(
+		res = regularization.MHCVGibbs(
 			major_train_chorales,
 			10,
-			cd_mh,
+			cd_gibbs,
 			[1000],
-			[100000, 10000, 1000, 100, 10, 1],
-			True
+			[100000, 10000, 1000, 100, 10, 1]
 		)
 
-		pickle.dump(res, open( "RegularizationCV-1000.p", "wb" ) )
+		pickle.dump(res, open( "GibbsRegularizationCV-1000.p", "wb" ) )
 
 
 	if sys.argv[1] == '4':
 
-		res = regularization.MHCV(
+		res = regularization.MHCVGibbs(
 			major_train_chorales,
 			10,
-			cd_mh,
+			cd_gibbs,
 			[100],
-			[100000, 10000, 1000, 100, 10, 1],
-			True
+			[100000, 10000, 1000, 100, 10, 1]
 		)
 
-		pickle.dump(res, open( "RegularizationCV-100.p", "wb" ) )
+		pickle.dump(res, open( "GibbsRegularizationCV-100.p", "wb" ) )
 
 
 	if sys.argv[1] == '5':
 
-		res = regularization.MHCV(
+		res = regularization.MHCVGibbs(
 			major_train_chorales,
 			10,
-			cd_mh,
+			cd_gibbs,
 			[10],
-			[100000, 10000, 1000, 100, 10, 1],
-			True
+			[100000, 10000, 1000, 100, 10, 1]
 		)
 
-		pickle.dump(res, open( "RegularizationCV-10.p", "wb" ) )
+		pickle.dump(res, open( "GibbsRegularizationCV-10.p", "wb" ) )
 
 	if sys.argv[1] == '6':
 
-		res = regularization.MHCV(
+		res = regularization.MHCVGibbs(
 			major_train_chorales,
 			10,
-			cd_mh,
+			cd_gibbs,
 			[1],
-			[100000, 10000, 1000, 100, 10, 1],
-			True
+			[100000, 10000, 1000, 100, 10, 1]
 		)
 
-		pickle.dump(res, open( "RegularizationCV-1.p", "wb" ) )
+		pickle.dump(res, open( "GibbsRegularizationCV-1.p", "wb" ) )
 
 if __name__ == '__main__':
    main()

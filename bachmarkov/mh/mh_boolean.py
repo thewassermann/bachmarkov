@@ -206,7 +206,8 @@ class MCMCBooleanSampler():
 				profile_array[int(i / self.thinning)] = self.log_likelihood()
 
 			# # simulated annealing step
-			# self.simulated_annealing(i, self.T)
+			self.simulated_annealing(i, self.T)
+			
 
 			# decide whether to loop or not
 			if i % len(no_rests_idxs) == len(no_rests_idxs) - 1:
