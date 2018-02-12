@@ -319,7 +319,7 @@ def MHCV(chorales, kfolds, cd, lambdas_1, lambdas_2, cross_constraints):
 				fold_k[k] = np.nansum(abs_diff_ll)
 
 			# cross validation error
-			CV[i, j] = np.nansum(fold_k)/len(fold_k)
+			CV[i, j] = np.nanmean(fold_k)
 			
 	CV_df = pd.DataFrame(CV)
 	CV_df.index = lambdas_1
@@ -685,7 +685,7 @@ def MHCVGibbs(chorales, kfolds, cd, lambdas_1, lambdas_2):
 				fold_k[k] = np.nansum(sq_diff_ll)
 
 			# cross validation error
-			CV[i, j] = np.nansum(fold_k)/len(fold_k)
+			CV[i, j] = np.nanmean(fold_k)
 
 	CV_df = pd.DataFrame(CV)
 	CV_df.index = lambdas_1

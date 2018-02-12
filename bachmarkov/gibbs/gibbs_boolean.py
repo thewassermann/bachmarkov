@@ -56,7 +56,7 @@ class GibbsBooleanSampler():
 			key : name of constraint, value : float
 	"""
 
-	def __init__(self, bassline, vocal_range_dict, chords, soprano, constraint_dict, fermata_layer, T, alpha, ps, weight_dict=None, thinning=1, progress_bar_off=True):
+	def __init__(self, bassline, vocal_range_dict, chords, soprano, constraint_dict, fermata_layer, T, alpha, ps, n_restarts, weight_dict=None, thinning=1, progress_bar_off=True):
 
 		self.bassline = extract_utils.to_crotchet_stream(bassline)
 		self.key = bassline.analyze('key')
@@ -83,6 +83,11 @@ class GibbsBooleanSampler():
 		self.thinning = thinning
 
 		self.progress_bar_off = progress_bar_off
+
+		self.minflat = {}
+		self.ts_array = []
+
+		self.n_restarts = n_restarts
 
 
 	def set_weight_dict(self, weight_dict):
@@ -197,13 +202,15 @@ class GibbsBooleanSampler():
 		Run the full Kitchen/Keuhlmann Algorithm
 		"""
 
+		restart_dict = {}
+
 		# structure to store profiling data
 		if profiling:
 			# profile_array = np.empty((n_iter, len(list(self.constraint_dict.keys()))))
 			# profile_df = pd.DataFrame(profile_array)
 			# profile_df.index = np.arange(n_iter)
 			# profile_df.columns = list(self.constraint_dict.keys())
-			profile_array = np.empty((int(np.floor(n_iter/self.thinning)), ))
+			profile_array = np.empty((int(np.floor(n_iter/self.thinning)), self.n_restarts))
 
 		# get length of the chorale
 		len_chorale = len(self.alto_flat)
@@ -211,47 +218,71 @@ class GibbsBooleanSampler():
 		# get index of rests 
 		no_rests_idxs = [x for x in np.arange(len_chorale) if not self.alto_flat[x].isRest]
 
+		for restart in trange(self.n_restarts, desc='Restarts', disable=self.progress_bar_off):
 
-		loop_count = 0
-		for i in trange(n_iter, desc='Iteration', disable=self.progress_bar_off):
-		# for i in np.arange(n_iter):
+			loop_count = 0
+			for i in np.arange(n_iter):
+			# for i in np.arange(n_iter):
 
-			# choose a random index
-			idx = no_rests_idxs[i - (loop_count * len(no_rests_idxs))]
+				# choose a random index
+				idx = no_rests_idxs[i - (loop_count * len(no_rests_idxs))]
 
-			# choose random part
-			if np.random.uniform() < .5:
-				target_part_name = 'Alto'
-			else:
-				target_part_name = 'Tenor'
+				# choose random part
+				if np.random.uniform() < .5:
+					target_part_name = 'Alto'
+				else:
+					target_part_name = 'Tenor'
 
+
+				if target_part_name == 'Alto':
+					self.alto_flat = self.local_search_gibbs(self.alto_flat, 'Alto', idx)
+				else:
+					self.tenor_flat = self.local_search_gibbs(self.tenor_flat, 'Tenor', idx)
+					
+				# run the profiler
+				# if profiling:
+				# 	for k in list(self.constraint_dict.keys()):
+				# 		if target_part_name == 'Alto':
+				# 			profile_df.loc[i, k] = self.constraint_dict[k].profiling(self)
+				# 		else:
+				# 			profile_df.loc[i, k] = self.constraint_dict[k].profiling(self)
+				if profiling and (i % self.thinning == 0):
+					ll = self.log_likelihood()
+					profile_array[int(i / self.thinning), restart] = ll
+
+				# simulated annealing step
+				self.simulated_annealing(i, self.T_0)
+
+
+				if (target_part_name not in  self.minflat.keys()):
+					if target_part_name == 'Alto':
+						self.minflat['Alto'] = (ll, self.alto_flat)
+					else:
+						self.minflat['Tenor'] = (ll, self.tenor_flat)
+				elif self.minflat[target_part_name][0] >= ll:
+					if target_part_name == 'Alto':
+						self.minflat['Alto'] = (ll, self.alto_flat)
+					else:
+						self.minflat['Tenor'] = (ll, self.tenor_flat)
+
+
+				# decide whether to loop or not
+				if i % len(no_rests_idxs) == len(no_rests_idxs) - 1:
+					loop_count += 1
+
+				# backwards on alternate loops
+				if loop_count % 2 == 1:
+					no_rests_idxs.reverse()
+
+			restart_dict[restart] = {'Alto' : self.alto_flat, 'Tenor' : self.tenor_flat}
 
 			if target_part_name == 'Alto':
-				self.alto_flat = self.local_search_gibbs(self.alto_flat, 'Alto', idx)
+				self.alto = self.init_part('Alto', self.vocal_range_dict['Alto'], self.chords)
+				self.alto_flat = list(self.alto.recurse(classFilter=('Note', 'Rest')))
 			else:
-				self.tenor_flat = self.local_search_gibbs(self.tenor_flat, 'Tenor', idx)
-				
-			# run the profiler
-			# if profiling:
-			# 	for k in list(self.constraint_dict.keys()):
-			# 		if target_part_name == 'Alto':
-			# 			profile_df.loc[i, k] = self.constraint_dict[k].profiling(self)
-			# 		else:
-			# 			profile_df.loc[i, k] = self.constraint_dict[k].profiling(self)
-			if profiling and (i % self.thinning == 0):
-				profile_array[int(i / self.thinning)] = self.log_likelihood()
+				self.tenor = self.init_part('Tenor', self.vocal_range_dict['Tenor'], self.chords)
+				self.tenor_flat = list(self.tenor.recurse(classFilter=('Note', 'Rest')))
 
-			# simulated annealing step
-			self.simulated_annealing(i, self.T_0)
-
-			# decide whether to loop or not
-			if i % len(no_rests_idxs) == len(no_rests_idxs) - 1:
-				loop_count += 1
-
-			# backwards on alternate loops
-			if loop_count % 2 == 1:
-				no_rests_idxs.reverse()
-		
 		if profiling and plotting:
 
 			# # print out marginal chain progression
@@ -291,6 +322,12 @@ class GibbsBooleanSampler():
 			print('{} Iterations : Effective Sample Size {}'.format(n_iter, ess))
 
 			plt.plot(np.arange(int(np.floor(n_iter/self.thinning))) * self.thinning, profile_array)
+			plt.title('Log-Likelihood')
+
+
+		best_restart = np.argmin(profile_array[-1, :])
+		self.alto_flat = restart_dict[best_restart]['Alto']
+		self.tenor_flat = restart_dict[best_restart]['Tenor']
 
 		self.alto = extract_utils.flattened_to_stream(self.alto_flat, self.bassline, stream.Stream(), 'Alto', self.fermata_layer)
 		self.tenor = extract_utils.flattened_to_stream(self.tenor_flat, self.bassline, stream.Stream(), 'Tenor', self.fermata_layer)
@@ -362,15 +399,18 @@ class GibbsBooleanSampler():
 		for k in list(note_probs.keys()):
 			note_probs[k] = note_probs[k] / normalizing_const
 
-		chosen_note_name = np.random.choice(list(note_constraints_dict.keys()), p=list(note_probs.values()))
-		chosen_note = note.Note(chosen_note_name)
+		#chosen_note_name = np.random.choice(list(note_constraints_dict.keys()), p=list(note_probs.values()))
+		#chosen_note = note.Note(chosen_note_name)
 
 		if part_name == 'Alto':
 			new_chain = self.alto_flat
 		else:
 			new_chain = self.tenor_flat
 
-		new_chain[index_] = chosen_note
+		# get best possible note from possible notes
+		if len(note_constraints_dict) != 0:
+			best_note = possible_dict[max(note_probs, key=note_probs.get)]
+			new_chain[index_] = best_note
 
 		return new_chain
 
@@ -486,16 +526,18 @@ class GibbsBooleanSampler():
 		"""
 		Function to cool T up to a certain level
 		"""
-		if self.T > .1:
-			self.T = self.alpha * self.T
+		# if self.T > .1:
+		# 	self.T = self.alpha * self.T
 
-		# lower bound to confirm convergence
-		# if self.T > .01:
-		#     self.T = T_0 / np.log(2 + iter_)
+		#lower bound to confirm convergence
+		if self.T > .01:
+			self.T = T_0 / np.log(2 + iter_)
 
 		# cauchy 
 		# if self.T >.1:
 		#     self.T = T_0 / iter_
+
+		self.ts_array.append(self.T)
 
 
 

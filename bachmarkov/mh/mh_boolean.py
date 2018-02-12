@@ -59,7 +59,7 @@ class MCMCBooleanSampler():
 			before stopping
 	"""
 	
-	def __init__(self, bassline, vocal_range, chords, constraint_dict, fermata_layer, T, alpha, ps, weight_dict=None, thinning=1, progress_bar_off=True, cross_constraints=False):
+	def __init__(self, bassline, vocal_range, chords, constraint_dict, fermata_layer, T, alpha, ps, n_restarts, weight_dict=None, thinning=1, progress_bar_off=True, cross_constraints=False):
 		
 		self.bassline = extract_utils.to_crotchet_stream(bassline)
 		self.bass = list(self.bassline.recurse(classFilter=('Note', 'Rest')))
@@ -78,6 +78,10 @@ class MCMCBooleanSampler():
 		self.thinning = thinning
 		self.progress_bar_off = progress_bar_off
 		self.cross_constraints = cross_constraints
+		self.n_restarts = n_restarts
+
+		# to store lowest loglikelihood chain
+		self.minflat = ()
 
 
 	def set_weight_dict(self, weight_dict):
@@ -147,6 +151,8 @@ class MCMCBooleanSampler():
 		"""
 		Run the full Kitchen/Keuhlmann Algorithm
 		"""
+
+		restart_dict = {}
 		
 		# get length of the chorale
 		flat_chorale = self.melody
@@ -161,61 +167,73 @@ class MCMCBooleanSampler():
 			# profile_df = pd.DataFrame(profile_array)
 			# profile_df.index = np.arange(n_iter)
 			# profile_df.columns = list(self.constraint_dict.keys())
-			profile_array = np.empty((int(np.floor(n_iter/self.thinning)), ))
+			profile_array = np.empty((int(np.floor(n_iter/self.thinning)), self.n_restarts))
 
+		for restart in trange(self.n_restarts, desc='Restarts', disable=self.progress_bar_off):
 
-		loop_count = 0
-		for i in trange(n_iter, desc='Iteration', disable=self.progress_bar_off):
-		# for i in np.arange(n_iter):
-			
-			# loop through forwards and bachwards
-			idx = no_rests_idxs[i - (loop_count * len(no_rests_idxs))]
-			
-			# choose whether to local search or metropolis
-			if np.random.uniform() <= self.ps:
-				self.melody = self.local_search(self.melody, idx)
-
-			else:
-
-				if idx == 0:
-					# propose a note
-					possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
-						extract_utils.extract_notes_from_chord(self.chords[idx]),
-						self.key,
-						self.vocal_range,
-						None
-					)
+			loop_count = 0
+			for i in np.arange(n_iter):
+			# for i in np.arange(n_iter):
+				
+				# loop through forwards and bachwards
+				idx = no_rests_idxs[i - (loop_count * len(no_rests_idxs))]
+				
+				# choose whether to local search or metropolis
+				if np.random.uniform() <= self.ps:
+					self.melody = self.local_search(self.melody, idx)
 
 				else:
 
-					possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
-						extract_utils.extract_notes_from_chord(self.chords[idx]),
-						self.key,
-						self.vocal_range,
-						flat_chorale[idx-1]
-					)
+					if idx == 0:
+						# propose a note
+						possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+							extract_utils.extract_notes_from_chord(self.chords[idx]),
+							self.key,
+							self.vocal_range,
+							None
+						)
 
-				proposed_note = np.random.choice(possible_notes)
-				self.melody = self.metropolis_move(self.melody, proposed_note, idx)
-				
-				
-			# run the profiler
-			# for k in list(self.constraint_dict.keys()):
-				# profile_df.loc[i, k] = self.constraint_dict[k].profiling(self, self.soprano)
-			if profiling and (i % self.thinning == 0):
-				profile_array[int(i / self.thinning)] = self.log_likelihood()
+					else:
 
-			# # simulated annealing step
-			self.simulated_annealing(i, self.T)
-			
+						possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+							extract_utils.extract_notes_from_chord(self.chords[idx]),
+							self.key,
+							self.vocal_range,
+							flat_chorale[idx-1]
+						)
 
-			# decide whether to loop or not
-			if i % len(no_rests_idxs) == len(no_rests_idxs) - 1:
-				loop_count += 1
+					proposed_note = np.random.choice(possible_notes)
+					self.melody = self.metropolis_move(self.melody, proposed_note, idx)
+					
+					
+				# run the profiler
+				# for k in list(self.constraint_dict.keys()):
+					# profile_df.loc[i, k] = self.constraint_dict[k].profiling(self, self.soprano)
+				if profiling and (i % self.thinning == 0):
+					ll = self.log_likelihood()
+					profile_array[int(i / self.thinning), restart] = ll
 
-			# backwards on alternate loops
-			if loop_count % 2 == 1:
-				no_rests_idxs.reverse()
+				# # simulated annealing step
+				self.simulated_annealing(i, self.T)
+
+				if (not self.minflat):
+					self.minflat = (ll, self.melody)
+				elif self.minflat[0] >= ll:
+					self.minflat = (ll, self.melody)
+
+
+				# decide whether to loop or not
+				if i % len(no_rests_idxs) == len(no_rests_idxs) - 1:
+					loop_count += 1
+
+				# backwards on alternate loops
+				if loop_count % 2 == 1:
+					no_rests_idxs.reverse()
+
+			restart_dict[restart] = self.melody
+
+			self.soprano = self.init_melody()
+			self.melody = list(self.soprano.recurse(classFilter=('Note', 'Rest')))
 
 
 				
@@ -272,7 +290,10 @@ class MCMCBooleanSampler():
 
 			plt.plot(np.arange(int(np.floor(n_iter/self.thinning))) * self.thinning, profile_array)
 
-		self.soprano = extract_utils.flattened_to_stream(self.melody, self.bassline, stream.Stream(), 'Soprano', fermata_layer=self.fermata_layer)
+
+		best_restart = np.argmin(profile_array[-1, :])
+		self.melody = restart_dict[best_restart]
+		self.soprano = extract_utils.flattened_to_stream(restart_dict[best_restart], self.bassline, stream.Stream(), 'Soprano', fermata_layer=self.fermata_layer)
 
 		if profiling:
 			# return profile_df.mean(axis=1)
