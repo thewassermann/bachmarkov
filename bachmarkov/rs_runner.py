@@ -81,7 +81,8 @@ def main():
 			10,
 			cd_mh,
 			[1000],
-			[100000, 10000, 1000, 100, 10, 1, .1]
+			[100000, 10000, 1000, 100, 10, 1, .1],
+			True
 		)
 
 		pickle.dump(res, open( "RegularizationCV-1000.p", "wb" ) )
@@ -94,7 +95,8 @@ def main():
 			10,
 			cd_mh,
 			[100],
-			[100000, 10000, 1000, 100, 10, 1, .1]
+			[100000, 10000, 1000, 100, 10, 1, .1],
+			True
 		)
 
 		pickle.dump(res, open( "RegularizationCV-100.p", "wb" ) )
@@ -107,7 +109,8 @@ def main():
 			10,
 			cd_mh,
 			[10],
-			[100000, 10000, 1000, 100, 10, 1, .1]
+			[100000, 10000, 1000, 100, 10, 1, .1],
+			True
 		)
 
 		pickle.dump(res, open( "RegularizationCV-10.p", "wb" ) )
@@ -119,7 +122,8 @@ def main():
 			10,
 			cd_mh,
 			[1],
-			[100000, 10000, 1000, 100, 10, 1, .1]
+			[100000, 10000, 1000, 100, 10, 1, .1],
+			True
 		)
 
 		pickle.dump(res, open( "RegularizationCV-1.p", "wb" ) )
@@ -131,7 +135,8 @@ def main():
 			10,
 			cd_mh,
 			[.1],
-			[100000, 10000, 1000, 100, 10, 1, .1]
+			[100000, 10000, 1000, 100, 10, 1, .1],
+			True
 		)
 
 		pickle.dump(res, open( "RegularizationCV-01.p", "wb" ) )
