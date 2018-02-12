@@ -201,7 +201,8 @@ def optimize_chorales(chorale, cd_mh, lambda_1, lambda_2, cross_constraints):
 		),
 		1., # Starting Temperature
 		1., # Cooling Schedule
-		0.7, # prob of Local Search
+		0.7, # prob of Local Search,
+		1,
 		cross_constraints=cross_constraints
 	)
 		
@@ -298,7 +299,8 @@ def MHCV(chorales, kfolds, cd, lambdas_1, lambdas_2, cross_constraints):
 						),
 						1., # Starting Temperature
 						1., # Cooling Schedule
-						0.7, # prob of Local Search
+						0.7, # prob of Local Search,
+						1,
 						progress_bar_off=True,
 						cross_constraints=cross_constraints
 					)
@@ -578,6 +580,7 @@ def optimize_chorales_gibbs(chorale, cd_gibbs, lambda_1, lambda_2):
 		1,
 		1,
 		.9,
+		1,
 		progress_bar_off=True,
 	)
 
@@ -671,6 +674,7 @@ def MHCVGibbs(chorales, kfolds, cd, lambdas_1, lambdas_2):
 						1,
 						1,
 						.9,
+						1,
 						progress_bar_off=True,
 					)
 
