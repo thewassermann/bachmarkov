@@ -6,7 +6,7 @@ from scipy.stats.mstats import gmean
 
 from tqdm import trange
 import matplotlib.pyplot as plt
-
+import sys
 import copy
 
 from utils import chord_utils, extract_utils, data_utils
@@ -59,7 +59,8 @@ class MCMCBooleanSampler():
 			before stopping
 	"""
 	
-	def __init__(self, bassline, vocal_range, chords, constraint_dict, fermata_layer, T, alpha, ps, n_restarts, weight_dict=None, thinning=1, progress_bar_off=True, cross_constraints=False):
+	def __init__(self, bassline, vocal_range, chords, constraint_dict, fermata_layer, T, alpha, ps,
+		n_restarts, weight_dict=None, thinning=1, progress_bar_off=True, cross_constraints=False, soprano_profile=None):
 		
 		self.bassline = extract_utils.to_crotchet_stream(bassline)
 		self.bass = list(self.bassline.recurse(classFilter=('Note', 'Rest')))
@@ -82,6 +83,12 @@ class MCMCBooleanSampler():
 
 		# to store lowest loglikelihood chain
 		self.minflat = ()
+
+		if soprano_profile is not None:
+			self.soprano_profile = list(soprano_profile.recurse(classFilter=('Note', 'Rest')))
+
+		self.ts_dict = {}
+		self.accepted_array = []
 
 
 	def set_weight_dict(self, weight_dict):
@@ -180,6 +187,7 @@ class MCMCBooleanSampler():
 				
 				# choose whether to local search or metropolis
 				if np.random.uniform() <= self.ps:
+					self.accepted_array.append(1)
 					self.melody = self.local_search(self.melody, idx)
 
 				else:
@@ -213,8 +221,6 @@ class MCMCBooleanSampler():
 					ll = self.log_likelihood()
 					profile_array[int(i / self.thinning), restart] = ll
 
-				# # simulated annealing step
-				self.simulated_annealing(i, self.T)
 
 				if (not self.minflat):
 					self.minflat = (ll, self.melody)
@@ -224,20 +230,19 @@ class MCMCBooleanSampler():
 
 				# decide whether to loop or not
 				if i % len(no_rests_idxs) == len(no_rests_idxs) - 1:
-					loop_count += 1
-
-				# backwards on alternate loops
-				if loop_count % 2 == 1:
+					self.simulated_annealing(i, self.T)
 					no_rests_idxs.reverse()
+					loop_count += 1
 
 			restart_dict[restart] = self.melody
 
 			self.soprano = self.init_melody()
 			self.melody = list(self.soprano.recurse(classFilter=('Note', 'Rest')))
+			self.T = self.T_0
 
-
-				
 		#self.show_melody_bass()
+
+		best_restart = np.argmin(profile_array[-1, :])
 		
 		if profiling and plotting:
 
@@ -288,17 +293,22 @@ class MCMCBooleanSampler():
 			ess = self.effective_sample_size(profile_array)
 			print('{} Iterations : Effective Sample Size {}'.format(n_iter, ess))
 
-			plt.plot(np.arange(int(np.floor(n_iter/self.thinning))) * self.thinning, profile_array)
+			plt.plot(np.arange(int(np.floor(n_iter/self.thinning))) * self.thinning, profile_array, color='blue', alpha=.4)
 
+			if self.soprano_profile is not None:
+				self.melody = self.soprano_profile
+				bach_ll = self.log_likelihood()
+				plt.axhline(bach_ll, linestyle='--', color='r')
 
-		best_restart = np.argmin(profile_array[-1, :])
+			# add hline for ll of true bach
+
 		self.melody = restart_dict[best_restart]
 		self.soprano = extract_utils.flattened_to_stream(restart_dict[best_restart], self.bassline, stream.Stream(), 'Soprano', fermata_layer=self.fermata_layer)
 
 		if profiling:
 			# return profile_df.mean(axis=1)
 			# return the whole df
-			return profile_array # profile_df
+			return profile_array[:, best_restart] # profile_df
 
 		
 	def show_melody_bass(self, show_command=None):
@@ -432,18 +442,17 @@ class MCMCBooleanSampler():
 		proposed_constaints_count = np.nansum(proposed_constraints)
 		current_constaints_count = np.nansum(current_constraints)
 		
-		# acceptance probability
-		p = np.nanmin(
-			[
-				1,
-				np.exp(-(proposed_constaints_count - current_constaints_count)/ self.T)
-			]
-		)
+		if proposed_constaints_count < current_constaints_count:
+			p = 1
+		else:
+			p = np.exp((current_constaints_count - proposed_constaints_count)/self.T)
 		
 		# accept with probability p
 		if np.random.uniform() <= p:
+			self.accepted_array.append(1)
 			return proposed_chain
 		else:
+			self.accepted_array.append(0)
 			return part_
 
 
@@ -519,16 +528,18 @@ class MCMCBooleanSampler():
 		"""
 		Function to cool T up to a certain level
 		"""
-		if self.T > 1:
+		if self.T > sys.float_info.min:
 			self.T = self.alpha * self.T
 
 		#lower bound to confirm convergence
-		# if self.T > 1:
+		# if self.T > sys.float_info.min:
 		# 	self.T = T_0 / np.log(2 + iter_)
 
 		# cauchy 
 		# if self.T >.1:
 		#     self.T = T_0 / iter_
+		if iter_ not in self.ts_dict:
+			self.ts_dict[iter_] = self.T
 
 
 		
@@ -1196,34 +1207,57 @@ class FollowDirection(Constraint):
 		else:
 			return 1
 
-
-def create_cross_constraint_dict(constraint_dict, model):
+from collections import OrderedDict
+def create_cross_constraint_dict(constraint_dict, model, order=None):
 	"""
 	Turn a constraint_dict into a larger constraint_dict, including
 	cross constraints
 	"""
 	
-	cd_out = {}
-	
-	for i, k_outer in enumerate(list(constraint_dict.keys())):
+	if order is None:
+		cd_out = {}
 		
-		cd_out[k_outer] = constraint_dict[k_outer]
-		for j, k_inner in enumerate(list(constraint_dict.keys())):
-		
-			# just lower triangle
-			if i < j:
-				name_ = k_outer + '/' + k_inner
-				
-				if model == 'MH':
-					cd_out[name_] = CrossConstraint(
-						name_, [constraint_dict[k_outer], constraint_dict[k_inner]]
-					)
-				else:
-					cd_out[name_] = gibbs_boolean.CrossConstraint(
-						name_, [constraint_dict[k_outer], constraint_dict[k_inner]]
-					)
+		for i, k_outer in enumerate(list(constraint_dict.keys())):
 			
-	return cd_out  
+			cd_out[k_outer] = constraint_dict[k_outer]
+			for j, k_inner in enumerate(list(constraint_dict.keys())):
+			
+				# just lower triangle
+				if i < j:
+					name_ = k_outer + '/' + k_inner
+					
+					if model == 'MH':
+						cd_out[name_] = CrossConstraint(
+							name_, [constraint_dict[k_outer], constraint_dict[k_inner]]
+						)
+					else:
+						cd_out[name_] = gibbs_boolean.CrossConstraint(
+							name_, [constraint_dict[k_outer], constraint_dict[k_inner]]
+						)
+
+	else:
+
+		constraint_dict = OrderedDict(constraint_dict)
+		cd_out = OrderedDict()
+		
+		for i, k_outer in enumerate(list(constraint_dict.keys())):
+			
+			for j, k_inner in enumerate(list(constraint_dict.keys())):
+			
+				# just lower triangle
+				if i < j:
+					name_ = k_outer + '/' + k_inner
+					
+					if model == 'MH':
+						cd_out[name_] = CrossConstraint(
+							name_, [constraint_dict[k_outer], constraint_dict[k_inner]]
+						)
+					else:
+						cd_out[name_] = gibbs_boolean.CrossConstraint(
+							name_, [constraint_dict[k_outer], constraint_dict[k_inner]]
+						)
+
+	return OrderedDict({**constraint_dict, **cd_out})
 
 
 

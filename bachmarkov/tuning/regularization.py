@@ -19,6 +19,7 @@ import multiprocessing as mp
 from functools import partial
 
 import cvxpy as cvx
+from collections import OrderedDict
 
 class MCMCMinimizer(mh_boolean.MCMCBooleanSampler):
 	"""
@@ -31,8 +32,8 @@ class MCMCMinimizer(mh_boolean.MCMCBooleanSampler):
 		cross constraints
 		"""
 
-		cd = {k : dict_[k] for k in list(dict_.keys()) if '/' not in k}
-		cross_cd = {k : dict_[k] for k in list(dict_.keys()) if '/' in k}
+		cd = OrderedDict({k : dict_[k] for k in list(dict_.keys()) if '/' not in k})
+		cross_cd = OrderedDict({k : dict_[k] for k in list(dict_.keys()) if '/' in k})
 		return cd, cross_cd
 
 	def log_likelihood_min(self, weights_single, weights_cross, lambda_1, lambda_2):
@@ -185,7 +186,10 @@ class MCMCMinimizer(mh_boolean.MCMCBooleanSampler):
 		
 		wd_, wd_cross = self.split_dicts(weight_dict)
 
-		return -np.nansum(np.log(p_is))
+		return -np.nansum(np.log(p_is)) + \
+			(lambda_1 * np.nansum(list(wd_.values()))) + \
+			(lambda_2 * np.nansum(list(wd_cross.values())))
+
 	
 	
 	
@@ -268,7 +272,7 @@ def MHCV(chorales, kfolds, cd, lambdas_1, lambdas_2, cross_constraints):
 				training_ = [chorales[chorale_index] for chorale_index in training_indexes]
 				
 				if cross_constraints:
-					x_constraints = list(mh_boolean.create_cross_constraint_dict(cd, 'MH'))
+					x_constraints = list(mh_boolean.create_cross_constraint_dict(cd, 'MH', 'No Order'))
 					train_mses = np.empty((len(training_), len(x_constraints)))
 				else:
 					train_mses = np.empty((len(training_), len(list(cd.values()))))
@@ -317,7 +321,7 @@ def MHCV(chorales, kfolds, cd, lambdas_1, lambdas_2, cross_constraints):
 						test_mh.weight_dict = {k : trained_weights[i] for i,k in enumerate(list(cd.keys()))}
 						bach_train_weights_ll = test_mh.log_likelihood(trained_weights, l1, l2)
 					
-					abs_diff_ll[m] = abs(bach_opt_weights_ll - bach_train_weights_ll)	
+					abs_diff_ll[m] = (bach_opt_weights_ll - bach_train_weights_ll)**2
 				fold_k[k] = np.nansum(abs_diff_ll)
 
 			# cross validation error
@@ -561,7 +565,9 @@ class GibbsMinimizer(gibbs_boolean.GibbsBooleanSampler):
 		wd_, wd_cross = self.split_dicts(weight_dict)
 
 		# return scores
-		return -np.nansum(np.log(p_is))
+		return -np.nansum(np.log(p_is)) + \
+			(lambda_1 * np.nansum(list(wd_.values()))) + \
+			(lambda_2 * np.nansum(list(wd_cross.values())))
 
 def optimize_chorales_gibbs(chorale, cd_gibbs, lambda_1, lambda_2):
 
@@ -640,7 +646,7 @@ def MHCVGibbs(chorales, kfolds, cd, lambdas_1, lambdas_2):
 				training_indexes = set(np.arange(len(chorales))) - set(chorale_index_groups[k])
 				training_ = [chorales[chorale_index] for chorale_index in training_indexes]
 
-				x_constraints = list(mh_boolean.create_cross_constraint_dict(cd, 'Gibbs'))
+				x_constraints = list(mh_boolean.create_cross_constraint_dict(cd, 'Gibbs', 'No Order'))
 				train_mses = np.empty((len(training_), len(x_constraints)))
 
 				for l, train_ in enumerate(training_):
@@ -685,7 +691,6 @@ def MHCVGibbs(chorales, kfolds, cd, lambdas_1, lambdas_2):
 					bach_train_weights_ll = test_gibbs.log_likelihood(trained_weights, l1, l2)
 
 					sq_diff_ll[m] = (bach_opt_weights_ll - bach_train_weights_ll)**2
-					
 				fold_k[k] = np.nansum(sq_diff_ll)
 
 			# cross validation error
