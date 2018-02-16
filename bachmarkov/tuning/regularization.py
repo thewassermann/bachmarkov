@@ -546,7 +546,7 @@ class GibbsMinimizer(gibbs_boolean.GibbsBooleanSampler):
 					[self.constraint_dict[constraint].not_satisfied(self, possible_chain, index_cnt, part_name) * \
 					weights[i] for i, constraint in enumerate(list(self.constraint_dict.keys()))]
 
-				note_probabilities_dict[possible_notes[k].nameWithOctave] = np.exp(-np.nansum(constraints_not_met)/self.T)
+				note_probabilities_dict[possible_notes[k].nameWithOctave] = np.exp(-np.nansum(constraints_not_met))
 				total_sum = np.nansum(list(note_probabilities_dict.values()))
 				note_probabilities_dict = {key : note_probabilities_dict[key] / total_sum for key in list(note_probabilities_dict.keys())}
 
@@ -691,6 +691,7 @@ def MHCVGibbs(chorales, kfolds, cd, lambdas_1, lambdas_2):
 					bach_train_weights_ll = test_gibbs.log_likelihood(trained_weights, l1, l2)
 
 					sq_diff_ll[m] = (bach_opt_weights_ll - bach_train_weights_ll)**2
+					
 				fold_k[k] = np.nansum(sq_diff_ll)
 
 			# cross validation error

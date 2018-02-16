@@ -235,9 +235,15 @@ class GibbsBooleanSampler():
 
 
 				if target_part_name == 'Alto':
-					self.alto_flat = self.local_search_gibbs(self.alto_flat, 'Alto', idx)
+					if np.random.uniform() <= self.ps:
+						self.alto_flat = self.local_search_gibbs(self.alto_flat, 'Alto', idx)
+					else:
+						self.alto_flat = self.metropolis_move(self.alto_flat, 'Alto', idx)
 				else:
-					self.tenor_flat = self.local_search_gibbs(self.tenor_flat, 'Tenor', idx)
+					if np.random.uniform() <= self.ps:
+						self.tenor_flat = self.local_search_gibbs(self.tenor_flat, 'Tenor', idx)
+					else:
+						self.tenor_flat = self.metropolis_move(self.tenor_flat, 'Tenor', idx)
 					
 				# run the profiler
 				# if profiling:
@@ -283,6 +289,10 @@ class GibbsBooleanSampler():
 				self.tenor = self.init_part('Tenor', self.vocal_range_dict['Tenor'], self.chords)
 				self.tenor_flat = list(self.tenor.recurse(classFilter=('Note', 'Rest')))
 
+			self.T = self.T_0
+
+
+
 		if profiling and plotting:
 
 			# # print out marginal chain progression
@@ -321,7 +331,7 @@ class GibbsBooleanSampler():
 			ess = self.effective_sample_size(profile_array)
 			print('{} Iterations : Effective Sample Size {}'.format(n_iter, ess))
 
-			plt.plot(np.arange(int(np.floor(n_iter/self.thinning))) * self.thinning, profile_array)
+			plt.plot(np.arange(int(np.floor(n_iter/self.thinning))) * self.thinning, profile_array, color='blue', alpha=.3)
 			plt.title('Log-Likelihood')
 
 
@@ -337,20 +347,49 @@ class GibbsBooleanSampler():
 			# return the whole df
 			return profile_array # profile_df
 
-	def local_search_gibbs(self, part_, part_name, index_):
+	def metropolis_move(self, part_, part_name, index_):
 		"""
-		Carry out the LocalSearch algorithm as described by Kitchen/Keuhlmann
-
-		Search through the possible notes and select the note that does not satisfy
-		the least number of constraints (a.k.a satisfies the most)
+		Carry out the MetropolisMove algorithm as described by Kitchen/Keuhlmann
+		
+		Compare the chain with the proposed and current note. 
+		Then accept the proposed note with a particular acceptance probability 
 		"""
 
+		# ensure no crossing and octave max
+		low, high = self.vocal_range_dict[part_name]
+		if part_name == 'Alto':
+			if self.soprano_flat[index_].pitch < high:
+				high = self.soprano_flat[index_].pitch
+
+			if self.tenor_flat[index_].pitch > low:
+				low = self.tenor_flat[index_].pitch
+
+			if self.soprano_flat[index_].transpose(-12).pitch > low:
+				low = self.soprano_flat[index_].transpose(-12).pitch
+
+			if self.tenor_flat[index_].transpose(12).pitch < high:
+				high = self.tenor_flat[index_].transpose(12).pitch
+
+		else:
+
+			if self.alto_flat[index_].pitch < high:
+				high = self.alto_flat[index_].pitch
+
+			if self.bass_flat[index_].pitch > low:
+				low = self.bass_flat[index_].pitch
+
+			if self.alto_flat[index_].transpose(-12).pitch > low:
+				low = self.alto_flat[index_].transpose(-12).pitch
+
+			if self.bass_flat[index_].transpose(12).pitch < high:
+				high = self.bass_flat[index_].transpose(12).pitch
+		
 		if index_ == 0:
 		
 			possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
 				extract_utils.extract_notes_from_chord(self.chords[index_]),
 				self.key,
-				self.vocal_range_dict[part_name],
+				(low, high),
 				None
 			)
 
@@ -359,9 +398,108 @@ class GibbsBooleanSampler():
 			possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
 				extract_utils.extract_notes_from_chord(self.chords[index_]),
 				self.key,
-				self.vocal_range_dict[part_name],
+				(low, high),
 				part_[index_ -1]
 			)
+
+		if not possible_notes:
+			if part_name == 'Alto':
+				return self.alto_flat
+			else:
+				return self.tenor_flat			
+
+		current_chain = part_
+		proposed_chain = part_[:]
+		proposed_chain[index_] = np.random.choice(possible_notes)
+
+		# get number of constraints unsatisfied with current and proposed chains
+		if self.weight_dict is None:
+			proposed_constraints = \
+				[self.constraint_dict[k].not_satisfied(self, proposed_chain, index_, part_name) for k in list(self.constraint_dict.keys())]
+			current_constraints = \
+				[self.constraint_dict[k].not_satisfied(self, current_chain, index_, part_name) for k in list(self.constraint_dict.keys())]
+		else:
+			proposed_constraints = \
+				[self.constraint_dict[k].not_satisfied(self, proposed_chain, index_, part_name) * \
+					self.weight_dict[k] for k in list(self.constraint_dict.keys())]
+			current_constraints = \
+				[self.constraint_dict[k].not_satisfied(self, current_chain, index_, part_name) * \
+					self.weight_dict[k] for k in list(self.constraint_dict.keys())]      
+			
+		proposed_constaints_count = np.nansum(proposed_constraints)
+		current_constaints_count = np.nansum(current_constraints)
+		
+		if proposed_constaints_count < current_constaints_count:
+			p = 1
+		else:
+			p = np.exp((current_constaints_count - proposed_constaints_count)/self.T)
+		
+		# accept with probability p
+		if np.random.uniform() <= p:
+			return proposed_chain
+		else:
+			return part_
+
+	def local_search_gibbs(self, part_, part_name, index_):
+		"""
+		Carry out the LocalSearch algorithm as described by Kitchen/Keuhlmann
+
+		Search through the possible notes and select the note that does not satisfy
+		the least number of constraints (a.k.a satisfies the most)
+		"""
+
+		# ensure no crossing and octave max
+		low, high = self.vocal_range_dict[part_name]
+		if part_name == 'Alto':
+			if self.soprano_flat[index_].pitch < high:
+				high = self.soprano_flat[index_].pitch
+
+			if self.tenor_flat[index_].pitch > low:
+				low = self.tenor_flat[index_].pitch
+
+			if self.soprano_flat[index_].transpose(-12).pitch > low:
+				low = self.soprano_flat[index_].transpose(-12).pitch
+
+			if self.tenor_flat[index_].transpose(12).pitch < high:
+				high = self.tenor_flat[index_].transpose(12).pitch
+
+		else:
+
+			if self.alto_flat[index_].pitch < high:
+				high = self.alto_flat[index_].pitch
+
+			if self.bass_flat[index_].pitch > low:
+				low = self.bass_flat[index_].pitch
+
+			if self.alto_flat[index_].transpose(-12).pitch > low:
+				low = self.alto_flat[index_].transpose(-12).pitch
+
+			if self.bass_flat[index_].transpose(12).pitch < high:
+				high = self.bass_flat[index_].transpose(12).pitch
+
+		if index_ == 0:
+		
+			possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+				extract_utils.extract_notes_from_chord(self.chords[index_]),
+				self.key,
+				(low, high),
+				None
+			)
+
+		else:
+		
+			possible_notes = chord_utils.random_note_in_chord_and_vocal_range(
+				extract_utils.extract_notes_from_chord(self.chords[index_]),
+				self.key,
+				(low, high),
+				part_[index_ -1]
+			)
+
+		if not possible_notes:
+			if part_name == 'Alto':
+				return self.alto_flat
+			else:
+				return self.tenor_flat
 
 		# has possible notes in dict as note.Note is an unhashable type
 		possible_dict = {n.nameWithOctave : n for n in possible_notes}
@@ -399,8 +537,6 @@ class GibbsBooleanSampler():
 		for k in list(note_probs.keys()):
 			note_probs[k] = note_probs[k] / normalizing_const
 
-		#chosen_note_name = np.random.choice(list(note_constraints_dict.keys()), p=list(note_probs.values()))
-		#chosen_note = note.Note(chosen_note_name)
 
 		if part_name == 'Alto':
 			new_chain = self.alto_flat
@@ -408,9 +544,14 @@ class GibbsBooleanSampler():
 			new_chain = self.tenor_flat
 
 		# get best possible note from possible notes
-		if len(note_constraints_dict) != 0:
-			best_note = possible_dict[max(note_probs, key=note_probs.get)]
-			new_chain[index_] = best_note
+		best_note = possible_dict[max(note_probs, key=note_probs.get)]
+		new_chain[index_] = best_note
+
+		# else:
+
+		# 	chosen_note_name = np.random.choice(list(note_constraints_dict.keys()), p=list(note_probs.values()))
+		# 	chosen_note = note.Note(chosen_note_name)
+		# 	new_chain[index_] = chosen_note
 
 		return new_chain
 
@@ -501,7 +642,7 @@ class GibbsBooleanSampler():
 				constraints_not_met = \
 					[constraints_not_met[cnm] * self.weight_dict[cnm] for cnm in list(constraints_not_met.keys())]
 				
-				note_probabilities_dict[possible_notes[k_].nameWithOctave] = np.exp(-np.nansum(constraints_not_met)/self.T)
+				note_probabilities_dict[possible_notes[k_].nameWithOctave] = np.exp(-np.nansum(constraints_not_met))
 				total_sum = np.nansum(list(note_probabilities_dict.values()))
 				note_probabilities_dict = {key : note_probabilities_dict[key] / total_sum for key in list(note_probabilities_dict.keys())}
 			
@@ -526,7 +667,7 @@ class GibbsBooleanSampler():
 		"""
 		Function to cool T up to a certain level
 		"""
-		# if self.T > .1:
+		# if self.T > .001:
 		# 	self.T = self.alpha * self.T
 
 		#lower bound to confirm convergence

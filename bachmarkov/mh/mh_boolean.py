@@ -87,7 +87,7 @@ class MCMCBooleanSampler():
 		if soprano_profile is not None:
 			self.soprano_profile = list(soprano_profile.recurse(classFilter=('Note', 'Rest')))
 
-		self.ts_dict = {}
+		self.ts_array = []
 		self.accepted_array = []
 
 
@@ -234,6 +234,8 @@ class MCMCBooleanSampler():
 					no_rests_idxs.reverse()
 					loop_count += 1
 
+				self.ts_array.append(self.T)
+
 			restart_dict[restart] = self.melody
 
 			self.soprano = self.init_melody()
@@ -293,12 +295,46 @@ class MCMCBooleanSampler():
 			ess = self.effective_sample_size(profile_array)
 			print('{} Iterations : Effective Sample Size {}'.format(n_iter, ess))
 
-			plt.plot(np.arange(int(np.floor(n_iter/self.thinning))) * self.thinning, profile_array, color='blue', alpha=.4)
+			f, (ax0, ax1, ax2) = plt.subplots(3,1, figsize=(20, 12))
+
+			ax0.plot(np.arange(int(np.floor(n_iter/self.thinning))) * self.thinning, profile_array, color='blue', alpha=.4)
+			ax0.set_xlabel('Iterations')
+			ax0.set_ylabel(r'$-\log L(\theta)$')
+			ax0.set_title('Negative Log Likelihood per Iteration')
+
+			ax1.plot(np.arange(n_iter), self.ts_array)
+			ax1.set_xlabel('Iterations')
+			ax1.set_ylabel(r'$T$')
+			ax1.set_title('Cooling Schedule')
+
+			ax2.plot(np.arange(n_iter), np.cumsum(self.accepted_array))
+			ax2.plot(
+				np.arange(len(self.accepted_array)),
+				np.arange(len(self.accepted_array)),
+				linestyle='--',
+				color='r',
+				label='Full Acceptance'
+			)
+			ax2.plot(
+				np.arange(len(self.accepted_array)),
+				np.arange(len(self.accepted_array)) * self.ps,
+				linestyle='--',
+				color='lightblue',
+				label='Local Search Rate'
+			)
+			ax2.legend()
+			ax2.set_xlabel('Iterations')
+			ax2.set_ylabel('Cumulative Proposed Notes Accepted')
+			ax2.set_title('Accepting Schedule')
+
+			f.tight_layout()
+
+			## tune cooling schedule
 
 			if self.soprano_profile is not None:
 				self.melody = self.soprano_profile
 				bach_ll = self.log_likelihood()
-				plt.axhline(bach_ll, linestyle='--', color='r')
+				ax0.axhline(bach_ll, linestyle='--', color='r')
 
 			# add hline for ll of true bach
 
@@ -538,8 +574,6 @@ class MCMCBooleanSampler():
 		# cauchy 
 		# if self.T >.1:
 		#     self.T = T_0 / iter_
-		if iter_ not in self.ts_dict:
-			self.ts_dict[iter_] = self.T
 
 
 		
